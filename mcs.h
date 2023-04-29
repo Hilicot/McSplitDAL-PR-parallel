@@ -4,6 +4,7 @@
 #include "graph.h"
 #include "args.h"
 #include "stats.h"
+#include <set>
 
 
 using namespace std;
@@ -32,6 +33,21 @@ struct Bidomain
 struct NewBidomainResult{
     vector<Bidomain> new_domains;
     int reward;
+};
+
+struct Step{
+    vector<Bidomain> domains;
+    set<int> wselected;
+    int w_iter;
+    Bidomain *bd;
+    int v;
+    int cur_len;
+    int bd_idx;
+    Step(vector<Bidomain> &domains, set<int> &wselected, int w_iter, int v, int cur_len) : domains(domains), wselected(wselected), w_iter(w_iter), bd(nullptr), v(v), cur_len(cur_len), bd_idx(-1){};
+    void setBd(Bidomain *_bd, int _bd_idx){
+        this->bd = _bd;
+        this->bd_idx = _bd_idx;
+    }
 };
 
 vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *stats);
