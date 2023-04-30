@@ -3,6 +3,9 @@
 #include <stack>
 #include "mcs.h"
 #include "reward.h"
+#include <thread>
+#include <condition_variable>
+#include <list>
 
 #define DEBUG false
 
@@ -300,133 +303,150 @@ int selectW_index(const Graph &g0, const Graph &g1, const vector<VtxPair> &curre
     return idx;
 }
 
-void remove_vtx_from_array(vector<int> &arr, int start_idx, int &len, int remove_idx) {
-    len--;
-    std::swap(arr[start_idx + remove_idx], arr[start_idx + len]);
-}
-
 void remove_bidomain(vector<Bidomain> &domains, int idx) {
     domains[idx] = domains[domains.size() - 1];
     domains.pop_back();
 }
 
+mutex steps_mutex;
+condition_variable steps_cv;
+
 vector<VtxPair>
-solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<int> &g0_matched, vector<int> &g1_matched,
-      vector<Bidomain> &domains, vector<int> &left, vector<int> &right, unsigned int matching_size_goal,
+solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incumbent, vector<VtxPair> &current, list<Step>global_steps, vector<int> &g0_matched, vector<int> &g1_matched, vector<int> &left, vector<int> &right, unsigned int matching_size_goal,
       Stats *stats) {
-    stats->nodes = 0;
-    stack<Step> steps;
-    set<int> wselected_empty;
-    steps.push(Step(domains, wselected_empty, -1, -1, 0));
-    vector<VtxPair> incumbent;
-    vector<VtxPair> current;
 
-    while (steps.size() > 0) {
-        Step &s = steps.top();
+    list<Step> steps;
 
-        // check timeout
-        if (stats->abort_due_to_timeout)
-            return incumbent;
-
-        // delete eventual extra vertices from previous iterations
-        while (current.size() > s.cur_len) {
-            VtxPair pr = current.back();
-            g0_matched[pr.v] = 0;
-            g1_matched[pr.w] = 0;
-            current.pop_back();
+    while(true) {
+        // pop one step from the global stack
+        unique_lock lk(steps_mutex);
+        while(global_steps.empty()) {
+            steps_cv.wait(lk);
         }
+        steps.emplace_back(global_steps.back());
+        global_steps.pop_back();
+        lk.unlock();
 
-        /* V-step */
-        if (s.w_iter == -1) {
-            stats->nodes++;
 
-            // check max iterations
-            if (0 < arguments.max_iter && arguments.max_iter < stats->nodes) {
-                cout << "Reached " << stats->nodes << " iterations" << endl;
+        while (!steps.empty() && steps.size() < 1000) {
+            Step &s = steps.back();
+            steps.pop_back();
+
+            // check timeout
+            if (stats->abort_due_to_timeout)
                 return incumbent;
+
+            // delete eventual extra vertices from previous iterations
+            while (current.size() > s.cur_len) {
+                VtxPair pr = current.back();
+                g0_matched[pr.v] = 0;
+                g1_matched[pr.w] = 0;
+                current.pop_back();
             }
 
-            // If the current matching is larger than the incumbent matching, update the incumbent
-            if (current.size() > incumbent.size()) {
-                incumbent.clear();
-                for (auto &pr: current) {
-                    incumbent.push_back(pr);
-                }
-                if (!arguments.quiet) {
-                    cout << "Incumbent size: " << incumbent.size() << endl;
+            /* V-step */
+            if (s.w_iter == -1) {
+                stats->nodes++;
+
+                // check max iterations
+                if (0 < arguments.max_iter && arguments.max_iter < stats->nodes) {
+                    cout << "Reached " << stats->nodes << " iterations" << endl;
+                    return incumbent;
                 }
 
-                rewards.update_policy_counter(true);
-            }
+                // If the current matching is larger than the incumbent matching, update the incumbent
+                if (current.size() > incumbent.size()) {
+                    incumbent.clear();
+                    for (auto &pr: current) {
+                        incumbent.push_back(pr);
+                    }
+                    if (!arguments.quiet) {
+                        cout << "Incumbent size: " << incumbent.size() << endl;
+                    }
 
-            // Prune the branch if the upper bound is too small
-            int bound = (int) current.size() + calc_bound(s.domains);
-            if (bound <= incumbent.size() || bound < matching_size_goal) {
-                steps.pop();
+                    rewards.update_policy_counter(true);
+                }
+
+                // Prune the branch if the upper bound is too small
+                int bound = (int) current.size() + calc_bound(s.domains);
+                if (bound <= incumbent.size() || bound < matching_size_goal) {
+                    steps.pop_back();
+                    continue;
+                }
+
+                // Select a bidomain based on the heuristic
+                int bd_idx = select_bidomain(s.domains, left, rewards, (int) current.size());
+                if (bd_idx == -1) {
+                    // In the MCCS case, there may be nothing we can branch on
+                    continue;
+                }
+                auto bd = &s.domains[bd_idx];
+
+                // Select vertex v (vertex with max reward)
+                int tmp_idx = selectV_index(left, rewards, bd->l, bd->left_len);
+                int v = left[bd->l + tmp_idx];
+                bd->left_len--;
+                swap(left[bd->l + tmp_idx], left[bd->l + bd->left_len]);
+                rewards.update_policy_counter(false);
+
+                // Next iteration try to select a vertex w to pair with v
+                set<int> empty_set;
+                bd->right_len--;
+                for(int i=0; i<bd->right_len+1; i++) {
+                    Step s2(s.domains, empty_set, i, v, current.size());
+                    s2.setBd(bd, bd_idx);
+                    steps.emplace_back(s2);
+                }
                 continue;
             }
 
-            // Select a bidomain based on the heuristic
-            int bd_idx = select_bidomain(s.domains, left, rewards, (int) current.size());
-            if (bd_idx == -1) {
-                // In the MCCS case, there may be nothing we can branch on
-                continue;
-            }
-            auto bd = &s.domains[bd_idx];
-
-            // Select vertex v (vertex with max reward)
-            int tmp_idx = selectV_index(left, rewards, bd->l, bd->left_len);
-            int v = left[bd->l + tmp_idx];
-            bd->left_len--;
-            swap(left[bd->l + tmp_idx], left[bd->l + bd->left_len]);
-            rewards.update_policy_counter(false);
-
-            // Next iteration try to select a vertex w to pair with v
-            set<int> empty_set;
-            bd->right_len--;
-            Step s2(s.domains, empty_set, 0, v, current.size());
-            s2.setBd(bd, bd_idx);
-            steps.push(s2);
-            continue;
-        }
-
-        /* W-step */
-        if (s.w_iter < s.bd->right_len + 1) {
-            int tmp_idx = selectW_index(g0, g1, current, right, rewards, s.v, s.bd->r, s.bd->right_len + 1,
-                                        s.wselected);
-            int w = right[s.bd->r + tmp_idx];
-            s.wselected.insert(w);
-            swap(right[s.bd->r + tmp_idx], right[s.bd->r + s.bd->right_len]);
-            rewards.update_policy_counter(false);
+            /* W-step */
+            if (s.w_iter < s.bd->right_len + 1) {
+                int tmp_idx = selectW_index(g0, g1, current, right, rewards, s.v, s.bd->r, s.bd->right_len + 1,
+                                            s.wselected);
+                int w = right[s.bd->r + tmp_idx];
+                s.wselected.insert(w);
+                swap(right[s.bd->r + tmp_idx], right[s.bd->r + s.bd->right_len]);
+                rewards.update_policy_counter(false);
 
 #if DEBUG
-            if (stats->nodes % 10000 == 0 && stats->nodes > 000) {
-                cout << "nodes: " << stats->nodes << ", v: " << s.v << ", w: " << w << ", size: " << current.size()
-                     << ", dom: " << s.bd->left_len << " " << s.bd->right_len << endl;
-            }
+                if (stats->nodes % 10000 == 0 && stats->nodes > 000) {
+                    cout << "nodes: " << stats->nodes << ", v: " << s.v << ", w: " << w << ", size: " << current.size()
+                         << ", dom: " << s.bd->left_len << " " << s.bd->right_len << endl;
+                }
 #endif
-            int cur_len = (int)current.size();
-            auto result = generate_new_domains(s.domains, current, g0_matched, g1_matched, left, right, g0, g1, s.v, w,
-                                               arguments.directed || arguments.edge_labelled);
-            rewards.update_rewards(result, s.v, w, stats);
+                int cur_len = (int) current.size();
+                auto result = generate_new_domains(s.domains, current, g0_matched, g1_matched, left, right, g0, g1, s.v,
+                                                   w,
+                                                   arguments.directed || arguments.edge_labelled);
+                rewards.update_rewards(result, s.v, w, stats);
 
-            s.w_iter++;
-            s.cur_len = cur_len;
+                s.w_iter++;
+                s.cur_len = cur_len;
 
-            // next iterations select a new vertex v
-            steps.emplace(result.new_domains, s.wselected, -1, -1, (int)current.size());
-            continue;
+                // next iterations select a new vertex v
+                steps.pop_back(); // remove this step (we consumed it)
+                steps.emplace_back(result.new_domains, s.wselected, -1, -1, (int) current.size());
+                continue;
+            }
+
+
+            /* Backtrack */
+            s.bd->right_len++;
+            if (s.bd->left_len == 0)
+                remove_bidomain(s.domains, s.bd_idx);
+            steps.pop_back();
+            steps.back().cur_len = s.cur_len;
         }
 
-
-        /* Backtrack */
-        s.bd->right_len++;
-        if (s.bd->left_len == 0)
-            remove_bidomain(s.domains, s.bd_idx);
-        steps.pop();
-        steps.top().cur_len = s.cur_len;
+        // If the stack is not empty, push all steps in global stack
+        if (!steps.empty()){
+            unique_lock lk(steps_mutex);
+            // TODO copy local steps into global steps. We need to think about the order (depth first/priority first?)
+            lk.unlock();
+            steps_cv.notify_all();
+        }
     }
-
     return incumbent;
 }
 
@@ -468,30 +488,24 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
 
         int left_len = left.size() - start_l;
         int right_len = right.size() - start_r;
-        domains.push_back({start_l, start_r, left_len, right_len, false});
+        domains.emplace_back(start_l, start_r, left_len, right_len, false);
     }
 
+    // Start threads
+    stats->nodes = 0;
+    list<Step> steps;
+    set<int> wselected_empty;
+    steps.emplace_back(domains, wselected_empty, -1, -1, 0);
+    vector<VtxPair> current;
     vector<VtxPair> incumbent;
-
-    if (arguments.big_first) {
-        for (int k = 0; k < g0.n; k++) {
-            unsigned int goal = g0.n - k;
-            auto left_copy = left;
-            auto right_copy = right;
-            auto domains_copy = domains;
-            vector<VtxPair> current;
-            incumbent = solve(g0, g1, rewards, g0_matched, g1_matched, domains_copy, left_copy, right_copy,
-                  goal,
-                  stats);
-            if (incumbent.size() == goal || stats->abort_due_to_timeout)
-                break;
-            if (!arguments.quiet)
-                cout << "Upper bound: " << goal - 1 << std::endl;
-        }
-    } else {
-        vector<VtxPair> current;
-        incumbent = solve(g0, g1, rewards, g0_matched, g1_matched, domains, left, right, 1, stats);
+    vector<thread> threads;
+    for (int i = 0; i < arguments.threads; i++) {
+        stats[i].start = clock();
+        stats[i].nodes = 0;
+        threads.emplace_back(solve, g0, g1, ref(rewards),
+                             ref(incumbent), ref(current), steps, ref(g0_matched), ref(g1_matched), ref(left), ref(right), 1, stats);
     }
+
 
     if (arguments.timeout && double(clock() - stats->start) / CLOCKS_PER_SEC > arguments.timeout) {
         cout << "time out" << endl;

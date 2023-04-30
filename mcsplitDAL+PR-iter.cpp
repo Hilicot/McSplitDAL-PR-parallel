@@ -53,6 +53,7 @@ void set_default_arguments() {
     arguments.filename1 = NULL;
     arguments.filename2 = NULL;
     arguments.timeout = 0;
+    arguments.threads = 1;
     arguments.max_iter = -1;
     arguments.random_start = false;
     arguments.arg_num = 0;
@@ -115,6 +116,9 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
             break;
         case 't':
             arguments.timeout = std::stoi(arg);
+            break;
+        case 'p':
+            arguments.threads = std::stoi(arg);
             break;
         case 'r':
             arguments.random_start = true;
