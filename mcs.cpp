@@ -312,15 +312,14 @@ mutex steps_mutex;
 condition_variable steps_cv;
 
 vector<VtxPair>
-solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incumbent, vector<VtxPair> &current, list<Step>global_steps, vector<int> &g0_matched, vector<int> &g1_matched, vector<int> &left, vector<int> &right, unsigned int matching_size_goal,
-      Stats *stats) {
+solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incumbent, list<Step> global_steps, vector<int> &left, vector<int> &right, unsigned int matching_size_goal, Stats *stats) {
 
     list<Step> steps;
 
-    while(true) {
+    while (true) {
         // pop one step from the global stack
         unique_lock lk(steps_mutex);
-        while(global_steps.empty()) {
+        while (global_steps.empty()) {
             steps_cv.wait(lk);
         }
         steps.emplace_back(global_steps.back());
@@ -331,18 +330,20 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
         while (!steps.empty() && steps.size() < 1000) {
             Step &s = steps.back();
             steps.pop_back();
+            vector<VtxPair> current = s.current;
 
             // check timeout
             if (stats->abort_due_to_timeout)
                 return incumbent;
 
+            // TODO: unused since g0, g1 and current local to step, to be checked
             // delete eventual extra vertices from previous iterations
-            while (current.size() > s.cur_len) {
-                VtxPair pr = current.back();
-                g0_matched[pr.v] = 0;
-                g1_matched[pr.w] = 0;
-                current.pop_back();
-            }
+            // while (current.size() > s.cur_len) {
+            //     VtxPair pr = current.back();
+            //     s.g0_matched[pr.v] = 0;
+            //     s.g1_matched[pr.w] = 0;
+            //     current.pop_back();
+            // }
 
             /* V-step */
             if (s.w_iter == -1) {
@@ -393,7 +394,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 set<int> empty_set;
                 bd->right_len--;
                 for(int i=0; i<bd->right_len+1; i++) {
-                    Step s2(s.domains, empty_set, i, v, current.size());
+                    Step s2(s.domains, empty_set, i, v, current, s.g0_matched, s.g1_matched);
                     s2.setBd(bd, bd_idx);
                     steps.emplace_back(s2);
                 }
@@ -415,18 +416,17 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                          << ", dom: " << s.bd->left_len << " " << s.bd->right_len << endl;
                 }
 #endif
-                int cur_len = (int) current.size();
-                auto result = generate_new_domains(s.domains, current, g0_matched, g1_matched, left, right, g0, g1, s.v,
+                s.current = current;
+                auto result = generate_new_domains(s.domains, current, s.g0_matched, s.g1_matched, left, right, g0, g1, s.v,
                                                    w,
                                                    arguments.directed || arguments.edge_labelled);
                 rewards.update_rewards(result, s.v, w, stats);
 
                 s.w_iter++;
-                s.cur_len = cur_len;
 
                 // next iterations select a new vertex v
                 steps.pop_back(); // remove this step (we consumed it)
-                steps.emplace_back(result.new_domains, s.wselected, -1, -1, (int) current.size());
+                steps.emplace_back(result.new_domains, s.wselected, -1, -1, current, s.g0_matched, s.g1_matched);
                 continue;
             }
 
@@ -436,13 +436,16 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
             if (s.bd->left_len == 0)
                 remove_bidomain(s.domains, s.bd_idx);
             steps.pop_back();
-            steps.back().cur_len = s.cur_len;
+            
+            // steps.back().cur_len = s.cur_len; TODO: to be checked it is unused because current local to step
         }
 
         // If the stack is not empty, push all steps in global stack
         if (!steps.empty()){
             unique_lock lk(steps_mutex);
             // TODO copy local steps into global steps. We need to think about the order (depth first/priority first?)
+            // For now just copy back without sorting to avoid hindering performances 
+            global_steps.splice(global_steps.end(), steps);
             lk.unlock();
             steps_cv.notify_all();
         }
@@ -495,17 +498,17 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
     stats->nodes = 0;
     list<Step> steps;
     set<int> wselected_empty;
-    steps.emplace_back(domains, wselected_empty, -1, -1, 0);
-    vector<VtxPair> current;
+    steps.emplace_back(domains, wselected_empty, -1, -1, vector<VtxPair>(), g0_matched, g1_matched);
     vector<VtxPair> incumbent;
     vector<thread> threads;
     for (int i = 0; i < arguments.threads; i++) {
         stats[i].start = clock();
         stats[i].nodes = 0;
-        threads.emplace_back(solve, g0, g1, ref(rewards),
-                             ref(incumbent), ref(current), steps, ref(g0_matched), ref(g1_matched), ref(left), ref(right), 1, stats);
+        threads.emplace_back(solve, g0, g1, ref(rewards), ref(incumbent), steps, ref(left), ref(right), 1, stats);
     }
 
+    for (std::thread & t : threads)
+        t.join();
 
     if (arguments.timeout && double(clock() - stats->start) / CLOCKS_PER_SEC > arguments.timeout) {
         cout << "time out" << endl;

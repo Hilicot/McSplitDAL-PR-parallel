@@ -41,9 +41,11 @@ struct Step{
     int w_iter;
     Bidomain *bd;
     int v;
-    int cur_len;
+    vector<VtxPair> current;
     int bd_idx;
-    Step(vector<Bidomain> &domains, set<int> &wselected, int w_iter, int v, int cur_len) : domains(domains), wselected(wselected), w_iter(w_iter), bd(nullptr), v(v), cur_len(cur_len), bd_idx(-1){};
+    vector<int> &g0_matched;
+    vector<int> &g1_matched;
+    Step(vector<Bidomain> &domains, set<int> &wselected, int w_iter, int v, vector<VtxPair> current, vector<int> &g0_matched, vector<int> &g1_matched): domains(domains), wselected(wselected), w_iter(w_iter), bd(nullptr), v(v), current(current), bd_idx(-1), g0_matched(g0_matched), g1_matched(g1_matched){};
     void setBd(Bidomain *_bd, int _bd_idx){
         this->bd = _bd;
         this->bd_idx = _bd_idx;
