@@ -326,35 +326,11 @@ int main(int argc, char **argv) {
                      });
     std::cout << "Sorting done" << std::endl;
 
-#if 0
-    int idx;
-    for(idx=0;idx<vv0.size();idx++)
-       cout<<vv0[idx]<<"  ";
-    cout<<endl;
-    for(idx=0;idx<g0_deg.size();idx++)
-       cout<<g0_deg[idx]<<"  ";
-    cout<<endl;
-    for(idx=0;idx<vv1.size();idx++)
-       cout<<vv1[idx]<<"  ";
-    cout<<endl;
-    for(idx=0;idx<g1_deg.size();idx++)
-       cout<<"("<<idx<<","<<g1_deg[idx]<<")  ";
-    cout<<endl;
 
-#endif
     struct Graph g0_sorted = induced_subgraph(g0, vv0);
     struct Graph g1_sorted = induced_subgraph(g1, vv1);
     clock_t time_elapsed = clock() - stats->start;
     std::cout << "Induced subgraph calculated in " << time_elapsed * 1000 / CLOCKS_PER_SEC << "ms" << endl;
-#if 0
-    int idx;
-    for(idx=0;idx<g0.n;idx++)
-        cout<<g0.label[idx]<<" ";
-    cout<<endl;
-    for(idx=0;idx<g0_sorted.n;idx++)
-        cout<<g0_sorted.label[idx]<<" ";
-    cout<<endl;
-#endif
 
     g0_sorted.pack_leaves();
     g1_sorted.pack_leaves();
@@ -390,6 +366,7 @@ int main(int argc, char **argv) {
         timeout_thread.join();
     }
 #endif
+
     if (!check_sol(g0, g1, solution))
         cout << "*** Error: Invalid solution" << endl;
 
