@@ -43,14 +43,8 @@ struct Step {
     int v;
     vector<VtxPair> current;
     int bd_idx;
-    vector<int> g0_matched;
-    vector<int> g1_matched;
 
-    Step(vector<Bidomain> domains, int w_iter, int v, vector<VtxPair> current, vector<int> g0_matched, vector<int> g1_matched) : domains(domains),
-                                                                            w_iter(w_iter), bd(nullptr), v(v),
-                                                                            current(current), bd_idx(-1),
-                                                                            g0_matched(g0_matched),
-                                                                            g1_matched(g1_matched) {
+    Step(vector<Bidomain> domains, int w_iter, int v, vector<VtxPair> current) : domains(domains), w_iter(w_iter), bd(nullptr), v(v), current(current), bd_idx(-1) {
         this->wselected = set<int>();
     };
 

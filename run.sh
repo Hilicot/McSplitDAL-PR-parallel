@@ -30,8 +30,8 @@ for pair in ascii_edgelists/* ; do
     echo "Processing $pair with timeout $timeout"
     pair_name=$(basename $pair)
     outfile="$output_folder/$pair_name.txt"
-    ./build/mcsplit-dal -A -t $timeout -s pagerank min_max $g1 $g2 2>&1 | tee $outfile
+    ./build/mcsplit-dal -A -t $timeout -s pagerank -p 1 min_max $g1 $g2 2>&1 | tee $outfile
     echo "timeout: $timeout" >> $outfile
     break
 done 
-#python3 /home/porro/telecho/telecho.py marco done
+#python3 /home/porro/telecho/telecho.py done

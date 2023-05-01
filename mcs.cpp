@@ -13,31 +13,9 @@ using namespace std;
 
 const int short_memory_threshold = 1e5;
 const int long_memory_threshold = 1e9;
-
-/*
-void show(const vector<VtxPair> &current, const vector<Bidomain> &domains,
-          const vector<int> &left, const vector<int> &right, Stats *stats) {
-    cout << "Nodes: " << stats->nodes << std::endl;
-    cout << "Length of current assignment: " << current.size() << std::endl;
-    cout << "Current assignment:";
-    for (unsigned int i = 0; i < current.size(); i++) {
-        cout << "  (" << current[i].v << " -> " << current[i].w << ")";
-    }
-    cout << std::endl;
-    for (unsigned int i = 0; i < domains.size(); i++) {
-        struct Bidomain bd = domains[i];
-        cout << "Left  ";
-        for (int j = 0; j < bd.left_len; j++)
-            cout << left[bd.l + j] << " ";
-        cout << std::endl;
-        cout << "Right  ";
-        for (int j = 0; j < bd.right_len; j++)
-            cout << right[bd.r + j] << " ";
-        cout << std::endl;
-    }
-    cout << "\n"
-         << std::endl;
-}*/
+mutex steps_mutex;
+mutex reward_mutex;
+condition_variable steps_cv;
 
 void delete_first_value_from_list(list<int> list, int value){
     for (auto it = list.begin(); it != list.end(); ++it) {
@@ -64,7 +42,10 @@ int selectV_index(const Bidomain *bd, const Rewards &rewards) {
     gtype max_g = -1;
     int best_vtx = INT_MAX;
     for (int vtx: bd->left) {
+        unique_lock rlk(reward_mutex);
         double vtx_reward = rewards.get_vertex_reward(vtx, false);
+        rlk.unlock();
+
         if (vtx_reward > max_g) {
             best_vtx = vtx;
             max_g = vtx_reward;
@@ -96,7 +77,10 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
         if (arguments.heuristic == rewards_based) {
             current = 0;
             for (int vtx: bd.left) {
+                unique_lock rlk(reward_mutex);
                 double vtx_reward = rewards.get_vertex_reward(vtx, false);
+                rlk.unlock();
+
                 current += vtx_reward;
             }
             if (current < max_reward) {
@@ -128,38 +112,9 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
     return best;
 }
 
-// Returns length of left half of array
-int partition(vector<int> &all_vv, int start, int len, const Graph &g, int index) {
-    int i = 0;
-    for (int j = 0; j < len; j++) {
-        if (g.get(index, all_vv[start + j])) {
-            std::swap(all_vv[start + i], all_vv[start + j]);
-            i++;
-        }
-    }
-    return i;
-}
-
-int remove_matched_vertex(vector<int> &arr, int start, int len, const vector<int> &matched) {
-    int p = 0;
-    for (int i = 0; i < len; i++) {
-        if (!matched[arr[start + i]]) {
-            std::swap(arr[start + i], arr[start + p]);
-            p++;
-        }
-    }
-    return p;
-}
-
 // multiway is for directed and/or labelled graphs
-NewBidomainResult
-generate_new_domains(const vector<Bidomain> &d, vector<VtxPair> &current, vector<int> &g0_matched,
-                     vector<int> &g1_matched,
-                     Bidomain &bd,
-                     const Graph &g0, const Graph &g1, const int v, const int w) {
+NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair> &current, Bidomain &bd, const Graph &g0, const Graph &g1, const int v, const int w) {
     current.emplace_back(v, w);
-    g0_matched[v] = 1;
-    g1_matched[w] = 1;
 
     int leaves_match_size = 0, v_leaf, w_leaf;
     for (unsigned int i = 0, j = 0; i < g0.leaves[v].size() && j < g1.leaves[w].size();) {
@@ -171,16 +126,16 @@ generate_new_domains(const vector<Bidomain> &d, vector<VtxPair> &current, vector
             const vector<int> &leaf0 = g0.leaves[v][i].second;
             const vector<int> &leaf1 = g1.leaves[w][j].second;
             for (unsigned int p = 0, q = 0; p < leaf0.size() && q < leaf1.size();) {
-                if (g0_matched[leaf0[p]])
+                if (!std::binary_search(bd.left.begin(), bd.left.end(), leaf0[p]))
                     p++;
-                else if (g1_matched[leaf1[q]])
+                else if (!std::binary_search(bd.left.begin(), bd.left.end(), leaf1[q]))
                     q++;
                 else {
                     v_leaf = leaf0[p], w_leaf = leaf1[q];
                     p++, q++;
                     current.push_back(VtxPair(v_leaf, w_leaf));
-                    g0_matched[v_leaf] = 1;
-                    g1_matched[w_leaf] = 1;
+                    delete_first_value_from_list(bd.left, v_leaf);
+                    delete_first_value_from_list(bd.right, w_leaf);
                     leaves_match_size++;
                 }
             }
@@ -190,37 +145,38 @@ generate_new_domains(const vector<Bidomain> &d, vector<VtxPair> &current, vector
 
     vector<Bidomain> new_d;
     new_d.reserve(d.size());
-    int l, r, j = -1;
+    int j = -1;
     int temp, total = 0;
-    int unmatched_left_len, unmatched_right_len;
     for (const Bidomain &old_bd: d) {
+        list<int> left_matched, left_unmatched, right_matched, right_unmatched;
         j++;
-        l = old_bd.l;
-        r = old_bd.r;
-        if (leaves_match_size > 0 && !old_bd.is_adjacent) {
-            unmatched_left_len = remove_matched_vertex(left, l, old_bd.left_len, g0_matched);
-            unmatched_right_len = remove_matched_vertex(right, r, old_bd.right_len, g1_matched);
-        } else {
-            unmatched_left_len = old_bd.left_len;
-            unmatched_right_len = old_bd.right_len;
-        }
+        
         // After these two partitions, left_len and right_len are the lengths of the
         // arrays of vertices with edges from v or w (int the directed case, edges
         // either from or to v or w)
-        int left_len = partition(left, l, unmatched_left_len, g0, v);
-        int right_len = partition(right, r, unmatched_right_len, g1, w);
-        int left_len_noedge = unmatched_left_len - left_len;
-        int right_len_noedge = unmatched_right_len - right_len;
+        for (auto node: old_bd.left) {
+            if (g0.get(v, node))
+                left_matched.emplace_back(node);
+            else
+                left_unmatched.emplace_back(node);
+        }
+
+        for (auto node: old_bd.right) {
+            if (g1.get(v, node))
+                right_matched.emplace_back(node);
+            else
+                right_unmatched.emplace_back(node);
+        }
 
         // compute reward
-        temp = std::min(old_bd.left_len, old_bd.right_len) - std::min(left_len, right_len) -
-               std::min(left_len_noedge, right_len_noedge);
+        temp = std::min(old_bd.left.size(), old_bd.right.size()) - std::min(left_matched.size(), right_matched.size()) -
+               std::min(left_unmatched.size(), right_unmatched.size());
         total += temp;
 
-        if (left_len_noedge && right_len_noedge)
-            new_d.push_back({l + left_len, r + right_len, left_len_noedge, right_len_noedge, old_bd.is_adjacent});
-        if (left_len && right_len) {
-            new_d.push_back({l, r, left_len, right_len, true});
+        if (left_unmatched.size() && right_unmatched.size())
+            new_d.push_back({left_unmatched, right_unmatched, old_bd.is_adjacent});
+        if (left_matched.size() && right_matched.size()) {
+            new_d.push_back({left_matched, right_matched, true});
         }
     }
 
@@ -262,7 +218,9 @@ int selectW_index(const Graph &g0, const Graph &g1, const vector<VtxPair> &curre
                 pair_reward += overlap_score * 100;
             }
             // Compute regular reward for pair
+            unique_lock rlk(reward_mutex);
             pair_reward += rewards.get_pair_reward(v, vtx, false);
+            rlk.unlock();
 
             // Check if this is the best pair so far
             if (pair_reward > max_g) {
@@ -283,15 +241,11 @@ void remove_bidomain(vector<Bidomain> &domains, int idx) {
     domains.pop_back();
 }
 
-mutex steps_mutex;
-condition_variable steps_cv;
-
 vector<VtxPair>
 solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incumbent, list<Step *> &global_steps,
       unsigned int matching_size_goal, Stats *stats) {
 
     list<Step *> steps;
-
     while (true) {
         // pop one step from the global stack
         unique_lock lk(steps_mutex);
@@ -345,7 +299,9 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                         cout << "Incumbent size: " << incumbent.size() << endl;
                     }
 
+                    unique_lock rlk(steps_mutex);
                     rewards.update_policy_counter(true);
+                    rlk.unlock();
                 }
 
                 // Prune the branch if the upper bound is too small
@@ -365,9 +321,12 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 auto bd = &s->domains[bd_idx];
 
                 // Select vertex v (vertex with max reward)
-                int v = selectV_index(s->bd, rewards);
+                int v = selectV_index(bd, rewards);
                 delete_first_value_from_list(bd->left, v);
+  
+                unique_lock rlk(reward_mutex);
                 rewards.update_policy_counter(false);
+                rlk.unlock();
 
                 // Next iteration try to select a vertex w to pair with v (convert this v step to a w step)
                 s->setBd(bd, bd_idx);
@@ -381,7 +340,10 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 int w = selectW_index(g0, g1, s->current, s->bd, rewards, s->v, s->wselected);
                 delete_first_value_from_list(s->bd->right, w);
                 s->wselected.insert(w);
+                
+                unique_lock rlk(reward_mutex);
                 rewards.update_policy_counter(false);
+                rlk.unlock();
 
 #if DEBUG
                 if (stats->nodes % 1000 == 0 && stats->nodes > 00) {
@@ -392,17 +354,19 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 // TODO check these are deep copies
                 vector<VtxPair> new_current = s->current;
                 Bidomain new_bd = *s->bd;
-                auto result = generate_new_domains(s->domains, new_current, s->g0_matched, s->g1_matched, new_bd, g0,
-                                                   g1, s->v,
-                                                   w);
+                auto result = generate_new_domains(s->domains, new_current, new_bd, g0, g1, s->v, w);
+                
+                rlk.lock();
                 rewards.update_rewards(result, s->v, w, stats);
+                rlk.unlock();
+                
                 s->w_iter++;
                 // if this is the last W vertex, remove current W step
                 if(s->w_iter >= s->bd->right.size())
                     steps.pop_back();
 
                 // next iterations select a new vertex v
-                Step *s2 = new Step(result.new_domains, -1, -1, new_current, s->g0_matched, s->g1_matched);
+                Step *s2 = new Step(result.new_domains, -1, -1, new_current);
                 steps.emplace_back(s2);
                 continue;
             }
@@ -426,10 +390,6 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 }
 
 vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *stats) {
-
-    vector<int> g0_matched(g0.n, 0);
-    vector<int> g1_matched(g1.n, 0);
-
     Rewards &rewards = *(Rewards *) rewards_p;
 
     auto domains = vector<Bidomain>{};
@@ -466,12 +426,12 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
     stats->nodes = 0;
     list<Step *> steps;
     // TODO remove g0_matched
-    Step *sp = new Step(std::move(domains), -1, -1, vector<VtxPair>(), g0_matched,
-                        g1_matched);
+    Step *sp = new Step(std::move(domains), -1, -1, vector<VtxPair>());
     steps.emplace_back(sp);
     vector<VtxPair> incumbent;
     vector<thread> threads;
     for (int i = 0; i < arguments.threads; i++) {
+        cout << "Starting thread " << i+1 << " out of " << arguments.threads << endl; 
         stats[i].start = clock();
         stats[i].nodes = 0;
         threads.emplace_back(solve, g0, g1, ref(rewards), ref(incumbent), ref(steps), 1, stats);
