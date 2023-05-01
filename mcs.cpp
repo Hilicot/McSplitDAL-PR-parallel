@@ -7,7 +7,7 @@
 #include <condition_variable>
 #include <list>
 
-#define DEBUG false
+#define DEBUG true
 
 using namespace std;
 
@@ -312,46 +312,52 @@ mutex steps_mutex;
 condition_variable steps_cv;
 
 vector<VtxPair>
-solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incumbent, list<Step> global_steps, vector<int> &left, vector<int> &right, unsigned int matching_size_goal, Stats *stats) {
+solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incumbent, list<Step *> &global_steps,
+      vector<int> &left, vector<int> &right, unsigned int matching_size_goal, Stats *stats) {
 
-    list<Step> steps;
+    list<Step *> steps;
 
     while (true) {
         // pop one step from the global stack
         unique_lock lk(steps_mutex);
-        while (global_steps.empty()) {
+        while (global_steps.empty() && !stats->abort_due_to_timeout && !(0 < arguments.max_iter && arguments.max_iter < stats->nodes)) {
             steps_cv.wait(lk);
         }
+        if(global_steps.empty())
+            return incumbent;
         steps.emplace_back(global_steps.back());
         global_steps.pop_back();
         lk.unlock();
 
-
-        while (!steps.empty() && steps.size() < 1000) {
-            Step &s = steps.back();
-            steps.pop_back();
-            vector<VtxPair> current = s.current;
+        // end cycle when there are no more steps, or when we have a W step after a certain number of steps
+        // TODO remove the threshold for the first thread.
+        // TODO adjust the threshold based on graph size (possibly, based on the depth at which the first pruning occurs?)
+        while (!steps.empty() && (steps.size() < 1000 || steps.back()->w_iter == -1)) {
+            Step *s = steps.back();
+            vector<VtxPair> current = s->current;
 
             // check timeout
-            if (stats->abort_due_to_timeout)
+            if (stats->abort_due_to_timeout) {
+                steps_cv.notify_one();
                 return incumbent;
-
+            }
             // TODO: unused since g0, g1 and current local to step, to be checked
             // delete eventual extra vertices from previous iterations
-            // while (current.size() > s.cur_len) {
+            // while (current.size() > s->cur_len) {
             //     VtxPair pr = current.back();
-            //     s.g0_matched[pr.v] = 0;
-            //     s.g1_matched[pr.w] = 0;
+            //     s->g0_matched[pr.v] = 0;
+            //     s->g1_matched[pr.w] = 0;
             //     current.pop_back();
             // }
 
             /* V-step */
-            if (s.w_iter == -1) {
+            if (s->w_iter == -1) {
                 stats->nodes++;
 
                 // check max iterations
                 if (0 < arguments.max_iter && arguments.max_iter < stats->nodes) {
                     cout << "Reached " << stats->nodes << " iterations" << endl;
+                    steps_cv.notify_all();
                     return incumbent;
                 }
 
@@ -369,19 +375,20 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 }
 
                 // Prune the branch if the upper bound is too small
-                int bound = (int) current.size() + calc_bound(s.domains);
+                int bound = (int) current.size() + calc_bound(s->domains);
                 if (bound <= incumbent.size() || bound < matching_size_goal) {
+                    delete steps.back();
                     steps.pop_back();
                     continue;
                 }
 
                 // Select a bidomain based on the heuristic
-                int bd_idx = select_bidomain(s.domains, left, rewards, (int) current.size());
+                int bd_idx = select_bidomain(s->domains, left, rewards, (int) current.size());
                 if (bd_idx == -1) {
                     // In the MCCS case, there may be nothing we can branch on
                     continue;
                 }
-                auto bd = &s.domains[bd_idx];
+                auto bd = &s->domains[bd_idx];
 
                 // Select vertex v (vertex with max reward)
                 int tmp_idx = selectV_index(left, rewards, bd->l, bd->left_len);
@@ -393,64 +400,64 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 // Next iteration try to select a vertex w to pair with v
                 set<int> empty_set;
                 bd->right_len--;
-                for(int i=0; i<bd->right_len+1; i++) {
-                    Step s2(s.domains, empty_set, i, v, current, s.g0_matched, s.g1_matched);
-                    s2.setBd(bd, bd_idx);
-                    steps.emplace_back(s2);
-                }
+                Step *s2 = new Step(s, s->domains, empty_set, 0, v, current, s->g0_matched, s->g1_matched);
+                s2->setBd(bd, bd_idx);
+                steps.emplace_back(s2);
                 continue;
             }
 
             /* W-step */
-            if (s.w_iter < s.bd->right_len + 1) {
-                int tmp_idx = selectW_index(g0, g1, current, right, rewards, s.v, s.bd->r, s.bd->right_len + 1,
-                                            s.wselected);
-                int w = right[s.bd->r + tmp_idx];
-                s.wselected.insert(w);
-                swap(right[s.bd->r + tmp_idx], right[s.bd->r + s.bd->right_len]);
+            if (s->w_iter < s->bd->right_len + 1) {
+                int tmp_idx = selectW_index(g0, g1, current, right, rewards, s->v, s->bd->r, s->bd->right_len + 1,
+                                            s->wselected);
+                int w = right[s->bd->r + tmp_idx];
+                s->wselected.insert(w);
+                swap(right[s->bd->r + tmp_idx], right[s->bd->r + s->bd->right_len]);
                 rewards.update_policy_counter(false);
 
 #if DEBUG
-                if (stats->nodes % 10000 == 0 && stats->nodes > 000) {
-                    cout << "nodes: " << stats->nodes << ", v: " << s.v << ", w: " << w << ", size: " << current.size()
-                         << ", dom: " << s.bd->left_len << " " << s.bd->right_len << endl;
+                if (stats->nodes % 1000 == 0 && stats->nodes > 00) {
+                    cout << "nodes: " << stats->nodes << ", v: " << s->v << ", w: " << w << ", size: " << current.size()
+                         << ", dom: " << s->bd->left_len << " " << s->bd->right_len << endl;
                 }
 #endif
-                s.current = current;
-                auto result = generate_new_domains(s.domains, current, s.g0_matched, s.g1_matched, left, right, g0, g1, s.v,
+                s->current = current;
+                auto result = generate_new_domains(s->domains, current, s->g0_matched, s->g1_matched, left, right, g0,
+                                                   g1, s->v,
                                                    w,
                                                    arguments.directed || arguments.edge_labelled);
-                rewards.update_rewards(result, s.v, w, stats);
-
-                s.w_iter++;
+                rewards.update_rewards(result, s->v, w, stats);
+                s->w_iter++;
 
                 // next iterations select a new vertex v
-                steps.pop_back(); // remove this step (we consumed it)
-                steps.emplace_back(result.new_domains, s.wselected, -1, -1, current, s.g0_matched, s.g1_matched);
+                Step *s2 = new Step(s, result.new_domains, s->wselected, -1, -1, current, s->g0_matched, s->g1_matched);
+                steps.emplace_back(s2);
                 continue;
             }
 
 
             /* Backtrack */
-            s.bd->right_len++;
-            if (s.bd->left_len == 0)
-                remove_bidomain(s.domains, s.bd_idx);
+            s->bd->right_len++;
+            if (s->bd->left_len == 0)
+                remove_bidomain(s->domains, s->bd_idx);
             steps.pop_back();
-            
-            // steps.back().cur_len = s.cur_len; TODO: to be checked it is unused because current local to step
+
+            // steps.back().cur_len = s->cur_len; TODO: to be checked it is unused because current local to step
         }
 
         // If the stack is not empty, push all steps in global stack
-        if (!steps.empty()){
-            unique_lock lk(steps_mutex);
+        if (!steps.empty()) {
+            unique_lock lk2(steps_mutex);
             // TODO copy local steps into global steps. We need to think about the order (depth first/priority first?)
-            // For now just copy back without sorting to avoid hindering performances 
-            global_steps.splice(global_steps.end(), steps);
-            lk.unlock();
+            // copy only W steps to global stack
+            for (auto &step: steps) {
+                if(step->w_iter > -1 && step->w_iter < step->bd->right_len + 1)
+                    global_steps.push_back(step);
+            }
+            lk2.unlock();
             steps_cv.notify_all();
         }
     }
-    return incumbent;
 }
 
 vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *stats) {
@@ -496,18 +503,19 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
 
     // Start threads
     stats->nodes = 0;
-    list<Step> steps;
+    list<Step *> steps;
     set<int> wselected_empty;
-    steps.emplace_back(domains, wselected_empty, -1, -1, vector<VtxPair>(), g0_matched, g1_matched);
+    Step *sp = new Step(nullptr, domains, wselected_empty, -1, -1, vector<VtxPair>(), g0_matched, g1_matched);
+    steps.emplace_back(sp);
     vector<VtxPair> incumbent;
     vector<thread> threads;
     for (int i = 0; i < arguments.threads; i++) {
         stats[i].start = clock();
         stats[i].nodes = 0;
-        threads.emplace_back(solve, g0, g1, ref(rewards), ref(incumbent), steps, ref(left), ref(right), 1, stats);
+        threads.emplace_back(solve, g0, g1, ref(rewards), ref(incumbent), ref(steps), ref(left), ref(right), 1, stats);
     }
 
-    for (std::thread & t : threads)
+    for (std::thread &t: threads)
         t.join();
 
     if (arguments.timeout && double(clock() - stats->start) / CLOCKS_PER_SEC > arguments.timeout) {

@@ -53,8 +53,8 @@ void set_default_arguments() {
     arguments.filename1 = NULL;
     arguments.filename2 = NULL;
     arguments.timeout = 0;
-    arguments.threads = 1;
-    arguments.max_iter = -1;
+    arguments.threads = 4;
+    arguments.max_iter = 10000;
     arguments.random_start = false;
     arguments.arg_num = 0;
     arguments.sort_heuristic = new SortHeuristic::Degree();
