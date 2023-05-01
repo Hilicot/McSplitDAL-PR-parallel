@@ -17,7 +17,7 @@ mutex steps_mutex;
 mutex reward_mutex;
 condition_variable steps_cv;
 
-void delete_first_value_from_list(list<int> list, int value){
+void delete_first_value_from_list(list<int> &list, int value){
     for (auto it = list.begin(); it != list.end(); ++it) {
         if (*it == value) {
             list.erase(it);
@@ -116,7 +116,7 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
 NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair> &current, Bidomain &bd, const Graph &g0, const Graph &g1, const int v, const int w) {
     current.emplace_back(v, w);
 
-    int leaves_match_size = 0, v_leaf, w_leaf;
+    int v_leaf, w_leaf;
     for (unsigned int i = 0, j = 0; i < g0.leaves[v].size() && j < g1.leaves[w].size();) {
         if (g0.leaves[v][i].first < g1.leaves[w][j].first)
             i++;
@@ -136,7 +136,6 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
                     current.push_back(VtxPair(v_leaf, w_leaf));
                     delete_first_value_from_list(bd.left, v_leaf);
                     delete_first_value_from_list(bd.right, w_leaf);
-                    leaves_match_size++;
                 }
             }
             i++, j++;
@@ -155,6 +154,8 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
         // arrays of vertices with edges from v or w (int the directed case, edges
         // either from or to v or w)
         for (auto node: old_bd.left) {
+            if (node == v)
+                exit(1);
             if (g0.get(v, node))
                 left_matched.emplace_back(node);
             else
@@ -162,7 +163,7 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
         }
 
         for (auto node: old_bd.right) {
-            if (g1.get(v, node))
+            if (g1.get(w, node))
                 right_matched.emplace_back(node);
             else
                 right_unmatched.emplace_back(node);
@@ -261,7 +262,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
         // end cycle when there are no more steps, or when we have a W step after a certain number of steps
         // TODO remove the threshold for the first thread.
         // TODO adjust the threshold based on graph size (possibly, based on the depth at which the first pruning occurs?)
-        while (!steps.empty() && steps.size() < 1000) {
+        while (!steps.empty() && steps.size() < 150) {
             Step *s = steps.back();
 
             // check timeout
@@ -346,9 +347,9 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 rlk.unlock();
 
 #if DEBUG
-                if (stats->nodes % 1000 == 0 && stats->nodes > 00) {
+                if (stats->nodes % 10000 == 0 && stats->nodes > 0) {
                     cout << "nodes: " << stats->nodes << ", v: " << s->v << ", w: " << w << ", size: " << s->current.size()
-                         << ", dom: " << s->bd->left.size() << " " << s->bd->right.size() << endl;
+                         << ", dom: " << s->bd->left.size() << " " << s->bd->right.size() << ", steps: " << steps.size() << endl;
                 }
 #endif
                 // TODO check these are deep copies
@@ -380,8 +381,8 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
             for (auto &step: steps) {
                 if (step->w_iter > -1)
                     global_steps.push_back(step);
-                else
-                    delete step;
+                // else
+                //     delete step;
             }
             lk2.unlock();
             steps_cv.notify_all();
