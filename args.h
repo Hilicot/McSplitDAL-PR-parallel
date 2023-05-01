@@ -81,6 +81,7 @@ EXTERN struct arguments {
     char *filename2;
     int timeout;
     int threads;
+    int max_thread_blocks;
     int max_iter;
     int arg_num;
     SwapPolicy swap_policy;

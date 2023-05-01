@@ -27,7 +27,7 @@ void delete_first_value_from_list(list<int> &list, int value){
 }
 
 bool reached_max_iter(Stats *stats) {
-    return 0 < arguments.max_iter && arguments.max_iter < stats->nodes;
+    return 0 < arguments.max_iter && arguments.max_iter < (int) stats->nodes;
 }
 
 int calc_bound(const vector<Bidomain> &domains) {
@@ -191,14 +191,14 @@ int getNeighborOverlapScores(const Graph &g0, const Graph &g1, const vector<VtxP
     // get number of selected neighbors of v
     for (auto &neighbor: g0.adjlist[v].adjNodes)
         for (auto j: current)
-            if (j.v == neighbor.id) {
+            if (j.v == (int) neighbor.id) {
                 overlap_v++;
                 break;
             }
     // get number of selected neighbors of w
     for (auto &neighbor: g1.adjlist[w].adjNodes)
         for (auto j: current)
-            if (j.w == neighbor.id) {
+            if (j.w == (int) neighbor.id) {
                 overlap_w++;
                 break;
             }
@@ -262,7 +262,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
         // end cycle when there are no more steps, or when we have a W step after a certain number of steps
         // TODO remove the threshold for the first thread.
         // TODO adjust the threshold based on graph size (possibly, based on the depth at which the first pruning occurs?)
-        while (!steps.empty() && steps.size() < 150) {
+        while (!steps.empty() && (int) steps.size() < arguments.max_thread_blocks) {
             Step *s = steps.back();
 
             // check timeout
@@ -307,7 +307,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
                 // Prune the branch if the upper bound is too small
                 int bound = (int) s->current.size() + calc_bound(s->domains);
-                if (bound <= incumbent.size() || bound < matching_size_goal) {
+                if (bound <= (int) incumbent.size() || bound < (int) matching_size_goal) {
                     delete steps.back();
                     steps.pop_back();
                     continue;
@@ -337,7 +337,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
             }
 
             /* W-step */
-            if (s->w_iter < s->bd->right.size()) {
+            if (s->w_iter < (int) s->bd->right.size()) {
                 int w = selectW_index(g0, g1, s->current, s->bd, rewards, s->v, s->wselected);
                 delete_first_value_from_list(s->bd->right, w);
                 s->wselected.insert(w);
@@ -363,7 +363,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 
                 s->w_iter++;
                 // if this is the last W vertex, remove current W step
-                if(s->w_iter >= s->bd->right.size())
+                if(s->w_iter >= (int) s->bd->right.size())
                     steps.pop_back();
 
                 // next iterations select a new vertex v

@@ -15,7 +15,7 @@ namespace SortHeuristic {
         int num_threads = 1;
     public:
         virtual string name(){return "Base";};
-        virtual vector<int> sort(const Graph &g){std::cout << "Warning: no sort is selected!" << std::endl;}; 
+        virtual vector<int> sort(const Graph &g){std::cout << "Warning: no sort is selected!" << std::endl; return vector<int>();}; 
         void set_num_threads(int num_threads_) { this->num_threads = num_threads_; }
     };
 

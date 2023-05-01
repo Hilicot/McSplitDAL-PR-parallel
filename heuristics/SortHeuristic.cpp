@@ -70,7 +70,7 @@ namespace SortHeuristic {
                 p[i] = ranks[i];
             }
         }
-        for (int i = 0; i < ranks.size(); i++) {
+        for (int i = 0; i < (int) ranks.size(); i++) {
             result[i] = ranks[i] / epsilon;
         }
         return result;
@@ -150,7 +150,7 @@ namespace SortHeuristic {
         index.store(g.n - 1);
 
         // run threads
-        for (size_t i = 0; i < num_threads - 1; i++)
+        for (int i = 0; i < num_threads - 1; i++)
             threads.emplace_back(std::thread([this, &index, &g] { run_worker(&index, g); }));
 
         // start working
@@ -172,7 +172,7 @@ namespace SortHeuristic {
         std::vector<int> d(vec_size);
         std::vector<double> delta(vec_size);
 
-        for (size_t w = 0; w < g.n; w++) {
+        for (int w = 0; w < g.n; w++) {
             sigma[w] = 0;
             d[w] = -1;
             delta[w] = 0;
@@ -221,13 +221,13 @@ namespace SortHeuristic {
     // Adapted from https://github.com/konstantinNovichenko/Modified-Dijkstra-Centrality-Closeness-Betweenness
     // Our version is multi threaded and does not support weighted graphs
     void ClosenessCentrality::process(const Graph &g, const size_t &vertex_id, std::vector<double> *BC_local) {
-        int s, Minimum, u, infinity, temp[g.n], centralityScore = 0;;
+        int s, Minimum, u, infinity, temp[g.n], centralityScore = 0;
         std::vector<bool> T = std::vector<bool>(g.n);//Nodes to be visted
         std::vector<int> L = std::vector<int>(g.n);//lambda
         std::vector<int> father = std::vector<int>(g.n);
 
         infinity = 1000;
-        s = (int) vertex_id;
+        s = u = (int) vertex_id;
 
         //INITIALIZING DATA STRUCTURES
         for (int j = 0; j < g.n; j++) {
@@ -253,7 +253,7 @@ namespace SortHeuristic {
                 }
             }
             temp[u] = infinity;                //Assigning INFINITY to the data structure already visited to find the next minimum L
-            for (int k = 0; k < g.adjlist[u].adjNodes.size(); k++) {
+            for (int k = 0; k < (int) g.adjlist[u].adjNodes.size(); k++) {
                 const Node *w = &g.adjlist[u].adjNodes[k];
                 if (!T[w->id]) {       // if w Exist in T, proceed
                     if (L[w->id] > L[u] + 1) {

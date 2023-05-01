@@ -33,7 +33,9 @@ static struct argp_option options[] = {
         {"vertex-labelled-only", 'x', 0,                   0, "Use vertex labels, but not edge labels"},
         {"big-first",            'b', 0,                   0, "First try to find an induced subgraph isomorphism, then decrement the target size"},
         {"timeout",              't', "timeout",           0, "Specify a timeout (seconds)"},
+        {"iterations",           'I', "iterations",        0, "Specify a maximum number of iterations"},
         {"threads",              'p', "threads",           0, "Specify the number of threads"},
+        {"max_thread_blocks",    'B', "blocks",            0, "Specify the number of steps a thread can work on locally"},
         {"random_start",         'r', 0,                   0, "Set random start to true"},
         {"dal_reward_policy",    'D', "dal_reward_policy", 0, "Specify the dal reward policy (num, max, avg)"},
         {"sort_heuristic",       's', "sort_heuristic",    0, "Specify the sort heuristic (degree, pagerank, betweenness, closeness, clustering, katz)"},
@@ -53,8 +55,9 @@ void set_default_arguments() {
     arguments.filename1 = NULL;
     arguments.filename2 = NULL;
     arguments.timeout = 0;
-    arguments.threads = 4;
-    arguments.max_iter = 10000;
+    arguments.threads = 1;
+    arguments.max_iter = 0;
+    arguments.max_thread_blocks = 512;
     arguments.random_start = false;
     arguments.arg_num = 0;
     arguments.sort_heuristic = new SortHeuristic::Degree();
@@ -84,6 +87,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
             if (arguments.dimacs || arguments.lad)
                 fail("The -d or -l options cannot be used together with -as.\n");
             arguments.ascii = true;
+            break;
         case 'q':
             arguments.quiet = true;
             break;
@@ -116,6 +120,12 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
             break;
         case 't':
             arguments.timeout = std::stoi(arg);
+            break;
+        case 'I':
+            arguments.max_iter = std::stoi(arg);
+            break;
+        case 'B':
+            arguments.max_thread_blocks = std::stoi(arg);
             break;
         case 'p':
             arguments.threads = std::stoi(arg);

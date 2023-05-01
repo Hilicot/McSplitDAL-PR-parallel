@@ -62,17 +62,17 @@ vector<Reward> DoubleQRewards::get_right_rewards(int v) {
 void DoubleQRewards::initialize(const vector<int> &left, const vector<int> &right) {
     left_initial_sort_order = left;
     right_initial_sort_order = right;
-    for (int i = 0; i < left.size(); i++) {
+    for (int i = 0; i < (int) left.size(); i++) {
         V[i].rl_component = left[i];
         V[i].ll_component = left[i];
-        for (int j = 0; j < right.size(); j++) {
+        for (int j = 0; j < (int) right.size(); j++) {
             Q[i][j].rl_component = right[j];
             Q[i][j].ll_component = right[j];
         }
     }
 
     if (arguments.mcs_method == RL_DAL) {
-        for (int j = 0; j < right.size(); j++) {
+        for (int j = 0; j < (int) right.size(); j++) {
             SingleQ[j].rl_component = right[j];
             SingleQ[j].ll_component = right[j];
         }
@@ -96,7 +96,7 @@ void DoubleQRewards::reset_rewards() {
     }
 
     if (arguments.mcs_method == RL_DAL)
-        for (int j = 0; j < right_initial_sort_order.size(); j++)
+        for (int j = 0; j < (int) right_initial_sort_order.size(); j++)
             SingleQ[j].reset(right_initial_sort_order[j]);
 }
 
