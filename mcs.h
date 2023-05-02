@@ -24,8 +24,9 @@ struct Bidomain {
     list<int> left;
     list<int> right;
     bool is_adjacent;
+    int original_right_len;
 
-    Bidomain(list<int> left, list<int> right, bool is_adjacent) : left(left), right(right), is_adjacent(is_adjacent) {};
+    Bidomain(list<int> left, list<int> right, bool is_adjacent) : left(left), right(right), is_adjacent(is_adjacent),original_right_len(right.size()) {};
 
     int get_max_len() const { return max(left.size(), right.size()); }
 };
@@ -42,16 +43,11 @@ struct Step {
     Bidomain *bd;
     int v;
     vector<VtxPair> current;
-    int bd_idx;
 
-    Step(vector<Bidomain> domains, int w_iter, int v, vector<VtxPair> current) : domains(domains), w_iter(w_iter), bd(nullptr), v(v), current(current), bd_idx(-1) {
+    Step(vector<Bidomain> domains, int w_iter, int v, vector<VtxPair> current) : domains(domains), w_iter(w_iter), bd(nullptr), v(v), current(current) {
         this->wselected = set<int>();
     };
 
-    void setBd(Bidomain *_bd, int _bd_idx) {
-        this->bd = _bd;
-        this->bd_idx = _bd_idx;
-    }
 };
 
 vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *stats);

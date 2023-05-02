@@ -7,7 +7,7 @@
 #include <condition_variable>
 #include <list>
 
-#define DEBUG true
+#define DEBUG 1
 
 using namespace std;
 
@@ -33,7 +33,7 @@ bool reached_max_iter(Stats *stats) {
 int calc_bound(const vector<Bidomain> &domains) {
     int bound = 0;
     for (const Bidomain &bd: domains) {
-        bound += std::min(bd.left.size(), bd.right.size());
+        bound += std::min((int)bd.left.size(), bd.original_right_len);
     }
     return bound;
 }
@@ -133,7 +133,7 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
                 else {
                     v_leaf = leaf0[p], w_leaf = leaf1[q];
                     p++, q++;
-                    current.push_back(VtxPair(v_leaf, w_leaf));
+                    current.emplace_back(v_leaf, w_leaf);
                     delete_first_value_from_list(bd.left, v_leaf);
                     delete_first_value_from_list(bd.right, w_leaf);
                 }
@@ -149,10 +149,7 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
     for (const Bidomain &old_bd: d) {
         list<int> left_matched, left_unmatched, right_matched, right_unmatched;
         j++;
-        
-        // After these two partitions, left_len and right_len are the lengths of the
-        // arrays of vertices with edges from v or w (int the directed case, edges
-        // either from or to v or w)
+
         for (auto node: old_bd.left) {
             if (node == v)
                 exit(1);
@@ -174,10 +171,13 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
                std::min(left_unmatched.size(), right_unmatched.size());
         total += temp;
 
-        if (left_unmatched.size() && right_unmatched.size())
-            new_d.push_back({left_unmatched, right_unmatched, old_bd.is_adjacent});
-        if (left_matched.size() && right_matched.size()) {
-            new_d.push_back({left_matched, right_matched, true});
+        if (!left_unmatched.empty() && !right_unmatched.empty()) {
+            new_d.emplace_back(std::move(left_unmatched), std::move(right_unmatched), old_bd.is_adjacent);
+            new_d.back().original_right_len++;
+        }
+        if (!left_matched.empty() && !right_matched.empty()) {
+            new_d.emplace_back(std::move(left_matched), std::move(right_matched), true);
+            new_d.back().original_right_len++;
         }
     }
 
@@ -262,7 +262,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
         // end cycle when there are no more steps, or when we have a W step after a certain number of steps
         // TODO remove the threshold for the first thread.
         // TODO adjust the threshold based on graph size (possibly, based on the depth at which the first pruning occurs?)
-        while (!steps.empty() && (int) steps.size() < arguments.max_thread_blocks) {
+        while (!steps.empty() && ((int) steps.size() < arguments.max_thread_blocks || steps.back()->w_iter == -1)) {
             Step *s = steps.back();
 
             // check timeout
@@ -330,14 +330,14 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 rlk.unlock();
 
                 // Next iteration try to select a vertex w to pair with v (convert this v step to a w step)
-                s->setBd(bd, bd_idx);
+                s->bd = bd;
                 s->w_iter = 0;
                 s->v = v;
                 continue;
             }
 
             /* W-step */
-            if (s->w_iter < (int) s->bd->right.size()) {
+            if ((int) s->bd->right.size() > 0) {
                 int w = selectW_index(g0, g1, s->current, s->bd, rewards, s->v, s->wselected);
                 delete_first_value_from_list(s->bd->right, w);
                 s->wselected.insert(w);
@@ -347,11 +347,15 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 rlk.unlock();
 
 #if DEBUG
-                if (stats->nodes % 10000 == 0 && stats->nodes > 0) {
+                if (stats->nodes % 1 == 0 && stats->nodes > 6700) {
                     cout << "nodes: " << stats->nodes << ", v: " << s->v << ", w: " << w << ", size: " << s->current.size()
-                         << ", dom: " << s->bd->left.size() << " " << s->bd->right.size() << ", steps: " << steps.size() << endl;
+                         << ", dom: " << s->bd->left.size() << " " << s->bd->right.size() << ", steps: " << steps.size()<< endl;
                 }
+                // FIXME delete this
+                vector<Step *> st{begin(steps), end(steps)};
+
 #endif
+
                 // TODO check these are deep copies
                 vector<VtxPair> new_current = s->current;
                 Bidomain new_bd = *s->bd;
@@ -363,7 +367,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 
                 s->w_iter++;
                 // if this is the last W vertex, remove current W step
-                if(s->w_iter >= (int) s->bd->right.size())
+                if((int) s->bd->right.size() == 0)
                     steps.pop_back();
 
                 // next iterations select a new vertex v
@@ -375,17 +379,21 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
         // If the stack is not empty, push all steps in global stack
         if (!steps.empty()) {
+#if DEBUG
+            cout << "Pushing " << steps.size() << " steps to global stack" << endl;
+#endif
             unique_lock lk2(steps_mutex);
             // TODO copy local steps into global steps. We need to think about the order (depth first/priority first?)
             // copy only W steps to global stack
             for (auto &step: steps) {
                 if (step->w_iter > -1)
                     global_steps.push_back(step);
-                // else
-                //     delete step;
+                else
+                     delete step;
             }
             lk2.unlock();
             steps_cv.notify_all();
+            steps.clear();
         }
     }
 }

@@ -56,7 +56,7 @@ void set_default_arguments() {
     arguments.filename2 = NULL;
     arguments.timeout = 0;
     arguments.threads = 1;
-    arguments.max_iter = 0;
+    arguments.max_iter = 6900;
     arguments.max_thread_blocks = 512;
     arguments.random_start = false;
     arguments.arg_num = 0;
