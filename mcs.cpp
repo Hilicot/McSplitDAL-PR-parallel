@@ -267,7 +267,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
             // check timeout
             if (stats->abort_due_to_timeout) {
-                steps_cv.notify_one();
+                steps_cv.notify_all();
                 return incumbent;
             }
             // TODO: unused since g0, g1 and current local to step, to be checked
