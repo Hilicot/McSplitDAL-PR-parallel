@@ -24,9 +24,8 @@ struct Bidomain {
     list<int> left;
     list<int> right;
     bool is_adjacent;
-    int original_right_len;
 
-    Bidomain(list<int> left, list<int> right, bool is_adjacent) : left(left), right(right), is_adjacent(is_adjacent),original_right_len(right.size()) {};
+    Bidomain(list<int> left, list<int> right, bool is_adjacent) : left(left), right(right), is_adjacent(is_adjacent) {};
 
     int get_max_len() const { return max(left.size(), right.size()); }
 };

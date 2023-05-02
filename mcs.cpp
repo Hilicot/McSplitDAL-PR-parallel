@@ -17,15 +17,6 @@ mutex steps_mutex;
 mutex reward_mutex;
 condition_variable steps_cv;
 
-void delete_first_value_from_list(list<int> &list, int value){
-    for (auto it = list.begin(); it != list.end(); ++it) {
-        if (*it == value) {
-            list.erase(it);
-            break;
-        }
-    }
-}
-
 bool reached_max_iter(Stats *stats) {
     return 0 < arguments.max_iter && arguments.max_iter < (int) stats->nodes;
 }
@@ -33,7 +24,7 @@ bool reached_max_iter(Stats *stats) {
 int calc_bound(const vector<Bidomain> &domains) {
     int bound = 0;
     for (const Bidomain &bd: domains) {
-        bound += std::min((int)bd.left.size(), bd.original_right_len);
+        bound += std::min((int)bd.left.size(), (int)bd.right.size());
     }
     return bound;
 }
@@ -114,6 +105,11 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
 
 // multiway is for directed and/or labelled graphs
 NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair> &current, Bidomain &bd, const Graph &g0, const Graph &g1, const int v, const int w) {
+    set<int> left_excluded, right_excluded;
+
+    left_excluded.insert(v);
+    right_excluded.insert(w);
+    
     current.emplace_back(v, w);
 
     int v_leaf, w_leaf;
@@ -128,14 +124,14 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
             for (unsigned int p = 0, q = 0; p < leaf0.size() && q < leaf1.size();) {
                 if (!std::binary_search(bd.left.begin(), bd.left.end(), leaf0[p]))
                     p++;
-                else if (!std::binary_search(bd.left.begin(), bd.left.end(), leaf1[q]))
+                else if (!std::binary_search(bd.right.begin(), bd.right.end(), leaf1[q]))
                     q++;
                 else {
                     v_leaf = leaf0[p], w_leaf = leaf1[q];
                     p++, q++;
                     current.emplace_back(v_leaf, w_leaf);
-                    delete_first_value_from_list(bd.left, v_leaf);
-                    delete_first_value_from_list(bd.right, w_leaf);
+                    left_excluded.insert(v_leaf);
+                    right_excluded.insert(w_leaf);
                 }
             }
             i++, j++;
@@ -151,8 +147,8 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
         j++;
 
         for (auto node: old_bd.left) {
-            if (node == v)
-                exit(1);
+            if (left_excluded.find(node) != left_excluded.end())
+                continue;
             if (g0.get(v, node))
                 left_matched.emplace_back(node);
             else
@@ -160,6 +156,8 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
         }
 
         for (auto node: old_bd.right) {
+            if (right_excluded.find(node) != right_excluded.end())
+                continue;
             if (g1.get(w, node))
                 right_matched.emplace_back(node);
             else
@@ -167,19 +165,20 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
         }
 
         // compute reward
-        temp = std::min(old_bd.left.size(), old_bd.right.size()) - std::min(left_matched.size(), right_matched.size()) -
+        temp = std::min(old_bd.left.size() - 1, old_bd.right.size() - 1) - std::min(left_matched.size(), right_matched.size()) -
                std::min(left_unmatched.size(), right_unmatched.size());
         total += temp;
 
         if (!left_unmatched.empty() && !right_unmatched.empty()) {
             new_d.emplace_back(std::move(left_unmatched), std::move(right_unmatched), old_bd.is_adjacent);
-            new_d.back().original_right_len++;
         }
         if (!left_matched.empty() && !right_matched.empty()) {
             new_d.emplace_back(std::move(left_matched), std::move(right_matched), true);
-            new_d.back().original_right_len++;
         }
     }
+
+    left_excluded.clear();
+    right_excluded.clear();
 
     NewBidomainResult result = {new_d, total};
     return result;
@@ -323,7 +322,6 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
                 // Select vertex v (vertex with max reward)
                 int v = selectV_index(bd, rewards);
-                delete_first_value_from_list(bd->left, v);
   
                 unique_lock rlk(reward_mutex);
                 rewards.update_policy_counter(false);
@@ -337,9 +335,8 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
             }
 
             /* W-step */
-            if ((int) s->bd->right.size() > 0) {
+            if (s->w_iter < (int) s->bd->right.size()) {
                 int w = selectW_index(g0, g1, s->current, s->bd, rewards, s->v, s->wselected);
-                delete_first_value_from_list(s->bd->right, w);
                 s->wselected.insert(w);
                 
                 unique_lock rlk(reward_mutex);
@@ -347,13 +344,10 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 rlk.unlock();
 
 #if DEBUG
-                if (stats->nodes % 1 == 0 && stats->nodes > 6700) {
+                if (stats->nodes % 10000 == 0) {
                     cout << "nodes: " << stats->nodes << ", v: " << s->v << ", w: " << w << ", size: " << s->current.size()
-                         << ", dom: " << s->bd->left.size() << " " << s->bd->right.size() << ", steps: " << steps.size()<< endl;
+                         << ", dom: " << s->bd->left.size() - 1 << " " << s->bd->right.size() - 1 << endl; // ", steps: " << steps.size()<< endl;
                 }
-                // FIXME delete this
-                vector<Step *> st{begin(steps), end(steps)};
-
 #endif
 
                 // TODO check these are deep copies
@@ -367,12 +361,13 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 
                 s->w_iter++;
                 // if this is the last W vertex, remove current W step
-                if((int) s->bd->right.size() == 0)
+                if(s->w_iter >= (int) s->bd->right.size())
                     steps.pop_back();
 
                 // next iterations select a new vertex v
                 Step *s2 = new Step(result.new_domains, -1, -1, new_current);
                 steps.emplace_back(s2);
+                
                 continue;
             }
         }
