@@ -5,7 +5,7 @@
 #include <atomic>
 
 typedef struct Stats {
-    unsigned long long nodes{0};
+    std::atomic<unsigned long long> nodes{0};
     unsigned long long cutbranches{0};
     unsigned long long conflicts = 0;
     clock_t bestfind;

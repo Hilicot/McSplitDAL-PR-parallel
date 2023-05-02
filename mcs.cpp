@@ -15,6 +15,7 @@ const int short_memory_threshold = 1e5;
 const int long_memory_threshold = 1e9;
 mutex steps_mutex;
 mutex reward_mutex;
+mutex incumbent_mutex;
 condition_variable steps_cv;
 
 bool reached_max_iter(Stats *stats) {
@@ -290,6 +291,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 }
 
                 // If the current matching is larger than the incumbent matching, update the incumbent
+                unique_lock ilk(incumbent_mutex);
                 if (s->current.size() > incumbent.size()) {
                     incumbent.clear();
                     for (auto &pr: s->current) {
@@ -299,10 +301,11 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                         cout << "Incumbent size: " << incumbent.size() << endl;
                     }
 
-                    unique_lock rlk(steps_mutex);
+                    unique_lock rlk(reward_mutex); // NB Check possible deadlock/Starvation!
                     rewards.update_policy_counter(true);
                     rlk.unlock();
                 }
+                ilk.unlock();
 
                 // Prune the branch if the upper bound is too small
                 int bound = (int) s->current.size() + calc_bound(s->domains);
