@@ -261,8 +261,6 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
         lk.unlock();
 
         // end cycle when there are no more steps, or when we have a W step after a certain number of steps
-        // TODO remove the threshold for the first thread.
-        // TODO adjust the threshold based on graph size (possibly, based on the depth at which the first pruning occurs?)
         int local_iter_count = 0;
         while (!steps.empty() && (block_size < 0 || (int) steps.size() < block_size || steps.back()->w_iter == -1)) {
             Step *s = steps.back();
@@ -375,14 +373,13 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
 
         }
-#if !DEBUG
+#if DEBUG
         cout << "local_iter_count: " << local_iter_count << endl;
 #endif // DEBUG
 
         // If the stack is not empty, push all steps in global stack
         if (!steps.empty()) {
             unique_lock lk2(steps_mutex);
-            // TODO copy local steps into global steps. We need to think about the order (depth first/priority first?)
             // copy only W steps to global stack
             for (auto &step: steps) {
                 if (step->w_iter > -1)
