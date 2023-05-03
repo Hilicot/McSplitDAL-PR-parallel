@@ -17,6 +17,7 @@ mutex steps_mutex;
 mutex reward_mutex;
 mutex incumbent_mutex;
 condition_variable steps_cv;
+int block_size = -1;
 
 bool reached_max_iter(Stats *stats) {
     return 0 < arguments.max_iter && arguments.max_iter < (int) stats->nodes;
@@ -262,7 +263,8 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
         // end cycle when there are no more steps, or when we have a W step after a certain number of steps
         // TODO remove the threshold for the first thread.
         // TODO adjust the threshold based on graph size (possibly, based on the depth at which the first pruning occurs?)
-        while (!steps.empty() && ((int) steps.size() < arguments.max_thread_blocks || steps.back()->w_iter == -1)) {
+        int local_iter_count = 0;
+        while (!steps.empty() && (block_size < 0 || (int) steps.size() < block_size || steps.back()->w_iter == -1)) {
             Step *s = steps.back();
 
             // check timeout
@@ -270,18 +272,11 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 steps_cv.notify_all();
                 return incumbent;
             }
-            // TODO: unused since g0, g1 and current local to step, to be checked
-            // delete eventual extra vertices from previous iterations
-            // while (current.size() > s->cur_len) {
-            //     VtxPair pr = current.back();
-            //     s->g0_matched[pr.v] = 0;
-            //     s->g1_matched[pr.w] = 0;
-            //     current.pop_back();
-            // }
 
             /* V-step */
             if (s->w_iter == -1) {
                 stats->nodes++;
+                local_iter_count++;
 
                 // check max iterations
                 if (reached_max_iter(stats)) {
@@ -312,6 +307,10 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 if (bound <= (int) incumbent.size() || bound < (int) matching_size_goal) {
                     delete steps.back();
                     steps.pop_back();
+                    // If I am the first thread, set the block_size
+                    if(block_size < 0){
+                        block_size = arguments.max_thread_blocks;
+                    }
                     continue;
                 }
 
@@ -373,21 +372,21 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 
                 continue;
             }
+
+
         }
+#if !DEBUG
+        cout << "local_iter_count: " << local_iter_count << endl;
+#endif // DEBUG
 
         // If the stack is not empty, push all steps in global stack
         if (!steps.empty()) {
-#if DEBUG
-            cout << "Pushing " << steps.size() << " steps to global stack" << endl;
-#endif
             unique_lock lk2(steps_mutex);
             // TODO copy local steps into global steps. We need to think about the order (depth first/priority first?)
             // copy only W steps to global stack
             for (auto &step: steps) {
                 if (step->w_iter > -1)
                     global_steps.push_back(step);
-                else
-                     delete step;
             }
             lk2.unlock();
             steps_cv.notify_all();
@@ -431,6 +430,8 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
 
     // Start threads
     stats->nodes = 0;
+    if(!arguments.first_thread_goes_until_pruning) // by default the first thread goes until pruning because block_size = -1
+        block_size = arguments.max_thread_blocks;   // so we set block_size to max_thread_blocks to disable it
     list<Step *> steps;
     // TODO remove g0_matched
     Step *sp = new Step(std::move(domains), -1, -1, vector<VtxPair>());

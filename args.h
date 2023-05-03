@@ -82,6 +82,7 @@ EXTERN struct arguments {
     int timeout;
     int threads;
     int max_thread_blocks;
+    bool first_thread_goes_until_pruning;
     int max_iter;
     int arg_num;
     SwapPolicy swap_policy;
