@@ -14,6 +14,7 @@ namespace SortHeuristic {
     protected:
         int num_threads = 1;
     public:
+        virtual ~Base() {};
         virtual string name(){return "Base";};
         virtual vector<int> sort(const Graph &g){std::cout << "Warning: no sort is selected!" << std::endl; return vector<int>();}; 
         void set_num_threads(int num_threads_) { this->num_threads = num_threads_; }
@@ -21,24 +22,28 @@ namespace SortHeuristic {
 
     class Degree : public Base {
     public:
+        ~Degree() {};
         string name() override {return "Degree";};
         vector<int> sort(const Graph &g) override;
     };
 
     class PageRank : public Base {
     public:
+        ~PageRank() {};
         string name() override {return "PageRank";};
         vector<int> sort(const Graph &g) override;
     };
 
     class LocalClusteringCoefficient : public Base {
     public:
+        ~LocalClusteringCoefficient() {};
         string name() override {return "LocalClusteringCoefficient";};
         vector<int> sort(const Graph &g) override;
     };
 
     class KatzCentrality : public Base {
     public:
+        ~KatzCentrality() {};
         string name() override {return "KatzCentrality";};
         vector<int> sort(const Graph &g) override;
     };
@@ -47,6 +52,7 @@ namespace SortHeuristic {
 
     class Parallel : public Base {
     public:
+        ~Parallel() {};
         vector<int> sort(const Graph &g) override;
         [[nodiscard]] vector<int> get_result_vector() const;
     private:
@@ -59,12 +65,14 @@ namespace SortHeuristic {
 
     class BetweennessCentrality : public Parallel {
     public:
+        ~BetweennessCentrality() {};
         string name() override {return "BetweennessCentrality";};
         void process(const Graph &g, const size_t &vertex_id, std::vector<double> *BC_local) override;
     };
 
     class ClosenessCentrality : public Parallel {
     public:
+        ~ClosenessCentrality() {};
         string name() override {return "ClosenessCentrality";};
         void process(const Graph &g, const size_t &vertex_id, std::vector<double> *BC_local) override;
     };

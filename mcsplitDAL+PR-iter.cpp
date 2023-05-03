@@ -415,4 +415,8 @@ int main(int argc, char **argv) {
 #endif
     if (aborted)
         cout << "TIMEOUT" << endl;
+
+    delete arguments.sort_heuristic;
+
+    return 0;
 }

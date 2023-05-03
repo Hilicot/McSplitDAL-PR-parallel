@@ -35,9 +35,9 @@ int selectV_index(const Bidomain *bd, const Rewards &rewards) {
     gtype max_g = -1;
     int best_vtx = INT_MAX;
     for (int vtx: bd->left) {
-        unique_lock rlk(reward_mutex);
+        //unique_lock rlk(reward_mutex);  // Optimistic version
         double vtx_reward = rewards.get_vertex_reward(vtx, false);
-        rlk.unlock();
+        //rlk.unlock();
 
         if (vtx_reward > max_g) {
             best_vtx = vtx;
@@ -70,9 +70,9 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
         if (arguments.heuristic == rewards_based) {
             current = 0;
             for (int vtx: bd.left) {
-                unique_lock rlk(reward_mutex);
+                // unique_lock rlk(reward_mutex);  // Optimistic version
                 double vtx_reward = rewards.get_vertex_reward(vtx, false);
-                rlk.unlock();
+                // rlk.unlock();
 
                 current += vtx_reward;
             }
@@ -220,9 +220,9 @@ int selectW_index(const Graph &g0, const Graph &g1, const vector<VtxPair> &curre
                 pair_reward += overlap_score * 100;
             }
             // Compute regular reward for pair
-            unique_lock rlk(reward_mutex);
+            // unique_lock rlk(reward_mutex);  // Optimistic version
             pair_reward += rewards.get_pair_reward(v, vtx, false);
-            rlk.unlock();
+            // rlk.unlock();
 
             // Check if this is the best pair so far
             if (pair_reward > max_g) {
@@ -236,11 +236,6 @@ int selectW_index(const Graph &g0, const Graph &g1, const vector<VtxPair> &curre
         }
     }
     return best_vtx;
-}
-
-void remove_bidomain(vector<Bidomain> &domains, int idx) {
-    domains[idx] = domains[domains.size() - 1];
-    domains.pop_back();
 }
 
 vector<VtxPair>
@@ -268,6 +263,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
             // check timeout
             if (stats->abort_due_to_timeout) {
                 steps_cv.notify_all();
+                while(!steps.empty()) delete steps.front(), steps.pop_front(); // Dealloc memory
                 return incumbent;
             }
 
@@ -280,6 +276,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 if (reached_max_iter(stats)) {
                     cout << "Reached " << stats->nodes << " iterations" << endl;
                     steps_cv.notify_all();
+                    while(!steps.empty()) delete steps.front(), steps.pop_front(); // Dealloc memory
                     return incumbent;
                 }
 
@@ -293,6 +290,8 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                     if (!arguments.quiet) {
                         cout << "Incumbent size: " << incumbent.size() << endl;
                     }
+
+                    stats->bestfind = clock() - stats->start;
 
                     unique_lock rlk(reward_mutex); // NB Check possible deadlock/Starvation!
                     rewards.update_policy_counter(true);
@@ -361,8 +360,10 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 
                 s->w_iter++;
                 // if this is the last W vertex, remove current W step
-                if(s->w_iter >= (int) s->bd->right.size())
+                if(s->w_iter >= (int) s->bd->right.size()) {
+                    delete steps.back();
                     steps.pop_back();
+                }
 
                 // next iterations select a new vertex v
                 Step *s2 = new Step(result.new_domains, -1, -1, new_current);
@@ -370,8 +371,6 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 
                 continue;
             }
-
-
         }
 #if DEBUG
         cout << "local_iter_count: " << local_iter_count << endl;
@@ -437,13 +436,16 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
     vector<thread> threads;
     for (int i = 0; i < arguments.threads; i++) {
         cout << "Starting thread " << i+1 << " out of " << arguments.threads << endl; 
-        stats[i].start = clock();
-        stats[i].nodes = 0;
+        stats->start = clock();
+        stats->nodes = 0;
         threads.emplace_back(solve, g0, g1, ref(rewards), ref(incumbent), ref(steps), 1, stats);
     }
 
     for (std::thread &t: threads)
-        t.join();
+        if (t.joinable())
+            t.join();
+
+    while(!steps.empty()) delete steps.front(), steps.pop_front(); // Dealloc memory
 
     if (arguments.timeout && double(clock() - stats->start) / CLOCKS_PER_SEC > arguments.timeout) {
         cout << "time out" << endl;
