@@ -56,7 +56,7 @@ void set_default_arguments() {
     arguments.filename2 = NULL;
     arguments.timeout = 0;
     arguments.threads = 1;
-    arguments.max_iter = 6900;
+    arguments.max_iter = 0;
     arguments.max_thread_blocks = 512;
     arguments.random_start = false;
     arguments.arg_num = 0;
@@ -233,7 +233,7 @@ bool check_sol(const Graph &g0, const Graph &g1, const vector<VtxPair> &solution
  * based on arguments.swap_policy, return true if the graphs needs to be swapped.
  * McSPLIT_SD and McSPLIT_SO are based on Trimble's PHD thesis https://theses.gla.ac.uk/83350/
  */
-bool swap_graphs(Graph g0, Graph g1) {
+bool swap_graphs(Graph &g0, Graph &g1) {
     switch (arguments.swap_policy) {
         case McSPLIT_SD: { // swap if density extremeness of g1 is bigger than that of g0
             // get densities

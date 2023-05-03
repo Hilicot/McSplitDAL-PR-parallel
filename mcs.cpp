@@ -7,7 +7,7 @@
 #include <condition_variable>
 #include <list>
 
-#define DEBUG 1
+#define DEBUG 0
 
 using namespace std;
 
@@ -347,7 +347,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 rlk.unlock();
 
 #if DEBUG
-                if (stats->nodes % 10000 == 0) {
+                if (stats->nodes % 1 == 0) {
                     cout << "nodes: " << stats->nodes << ", v: " << s->v << ", w: " << w << ", size: " << s->current.size()
                          << ", dom: " << s->bd->left.size() - 1 << " " << s->bd->right.size() - 1 << endl; // ", steps: " << steps.size()<< endl;
                 }
