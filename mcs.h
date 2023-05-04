@@ -8,6 +8,8 @@
 #include <set>
 #include <memory>
 #include <list>
+#include <condition_variable>
+#include <atomic>
 
 
 using namespace std;

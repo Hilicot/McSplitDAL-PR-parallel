@@ -4,7 +4,6 @@
 #include "mcs.h"
 #include "reward.h"
 #include <thread>
-#include <condition_variable>
 #include <list>
 
 #define DEBUG 0
@@ -247,10 +246,18 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
         // pop one step from the global stack
         unique_lock lk(steps_mutex);
         while (global_steps.empty() && !stats->abort_due_to_timeout && !reached_max_iter(stats)) {
+            stats->sleeping_threads++;
+            if (stats->sleeping_threads == arguments.threads) {
+                steps_cv.notify_all();
+                break;
+            }
             steps_cv.wait(lk);
+            stats->sleeping_threads--;
         }
-        if (stats->abort_due_to_timeout || reached_max_iter(stats))
+        if (stats->abort_due_to_timeout || reached_max_iter(stats) || stats->sleeping_threads == arguments.threads) {
+            lk.unlock();
             return incumbent;
+        }
         steps.emplace_back(global_steps.back());
         global_steps.pop_back();
         lk.unlock();
@@ -288,7 +295,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                         incumbent.push_back(pr);
                     }
                     if (!arguments.quiet) {
-                        cout << "Incumbent size: " << incumbent.size() << endl;
+                        cout << "Incumbent size: " << incumbent.size() << " after " << stats->nodes << " iterations" << endl;
                     }
 
                     stats->bestfind = clock() - stats->start;
