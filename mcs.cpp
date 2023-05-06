@@ -446,7 +446,7 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
     vector<thread> threads;
     for (int i = 0; i < arguments.threads; i++) {
         cout << "Starting thread " << i+1 << " out of " << arguments.threads << endl; 
-        stats->start = clock();
+        //stats->start = clock();
         stats->nodes = 0;
         threads.emplace_back(solve, g0, g1, ref(rewards), ref(incumbent), ref(steps), 1, stats);
     }
