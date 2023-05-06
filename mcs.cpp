@@ -298,7 +298,9 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                         cout << "Incumbent size: " << incumbent.size() << " after " << stats->nodes << " iterations" << endl;
                     }
 
-                    stats->bestfind = clock() - stats->start;
+                    stats->bestcount = stats->cutbranches + 1;
+                    stats->bestnodes = stats->nodes;
+                    stats->bestfind = clock();
 
                     unique_lock rlk(reward_mutex); // NB Check possible deadlock/Starvation!
                     rewards.update_policy_counter(true);
@@ -315,6 +317,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                     if(block_size < 0){
                         block_size = arguments.max_thread_blocks;
                     }
+                    stats->cutbranches++;
                     continue;
                 }
 
