@@ -39,6 +39,7 @@ static struct argp_option options[] = {
         {"random_start",         'r', 0,                   0, "Set random start to true"},
         {"dal_reward_policy",    'D', "dal_reward_policy", 0, "Specify the dal reward policy (num, max, avg)"},
         {"sort_heuristic",       's', "sort_heuristic",    0, "Specify the sort heuristic (degree, pagerank, betweenness, closeness, clustering, katz)"},
+        {"pruning",              'P', "pruning",           0, "Specify if the first thread goes on until pruning or not, before pushing to global queue"},
         {0}};
 
 void set_default_arguments() {
@@ -118,6 +119,9 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
             break;
         case 'b':
             arguments.big_first = true;
+            break;
+        case 'P':
+            arguments.first_thread_goes_until_pruning = true;
             break;
         case 't':
             arguments.timeout = std::stoi(arg);
