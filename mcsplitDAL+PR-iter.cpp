@@ -39,7 +39,7 @@ static struct argp_option options[] = {
         {"random_start",         'r', 0,                   0, "Set random start to true"},
         {"dal_reward_policy",    'D', "dal_reward_policy", 0, "Specify the dal reward policy (num, max, avg)"},
         {"sort_heuristic",       's', "sort_heuristic",    0, "Specify the sort heuristic (degree, pagerank, betweenness, closeness, clustering, katz)"},
-        {"pruning",              'P', "pruning",           0, "Specify if the first thread goes on until pruning or not, before pushing to global queue"},
+        {"pruning",              'P', 0,                   0, "Specify if the first thread goes on until pruning or not, before pushing to global queue"},
         {0}};
 
 void set_default_arguments() {
@@ -404,6 +404,10 @@ int main(int argc, char **argv) {
     cout << "  -switch_policy:          " << arguments.reward_policy.switch_policy << endl;
     cout << "  -dal_reward_policy:      " << arguments.reward_policy.dal_reward_policy << endl;
     cout << "  -neighbor_overlap:       " << arguments.reward_policy.neighbor_overlap << endl;
+    cout << "  -until_pruning:          " << arguments.first_thread_goes_until_pruning << endl;
+    cout << "  -threads:                " << arguments.threads << endl;
+    cout << "  -max_thread_blocks:      " << arguments.max_thread_blocks << endl;
+    cout << "  -max_iter:               " << arguments.max_iter << endl;
 
     cout << endl;
 
