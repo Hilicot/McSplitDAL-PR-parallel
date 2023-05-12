@@ -46,9 +46,9 @@ void Graph::pack_leaves() {
         deg[i] += (int) this->adjlist[i].adjNodes.size();
 
     for (int u = 0; u < this->n; u++) {
-        for (int v = 0; v < (int) this->adjlist[u].adjNodes.size(); v++)
-            if (deg[v] == 1) {
-                std::pair<unsigned int, unsigned int> labels(1, this->adjlist[v].label);
+        for (auto v: this->adjlist[u].adjNodes)
+            if (deg[v.id] == 1) {
+                std::pair<unsigned int, unsigned int> labels(1, this->adjlist[v.id].label);
                 int pos = -1;
                 for (int k = 0;; k++) {
                     if (k == int(this->leaves[u].size())) {
@@ -60,7 +60,7 @@ void Graph::pack_leaves() {
                     }
                 }
                 //            assert(pos != -1);
-                this->leaves[u][pos].second.push_back(v);
+                this->leaves[u][pos].second.push_back(v.id);
             }
         sort(this->leaves[u].begin(), this->leaves[u].end());
     }
