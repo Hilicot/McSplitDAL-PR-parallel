@@ -84,6 +84,7 @@ EXTERN struct arguments {
     int max_thread_blocks;
     bool first_thread_goes_until_pruning;
     int max_iter;
+    bool local_rewards;
     int arg_num;
     SwapPolicy swap_policy;
     RewardPolicy reward_policy;

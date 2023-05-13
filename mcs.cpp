@@ -13,7 +13,6 @@ using namespace std;
 const int short_memory_threshold = 1e5;
 const int long_memory_threshold = 1e9;
 mutex steps_mutex;
-mutex reward_mutex;
 mutex incumbent_mutex;
 condition_variable steps_cv;
 int block_size = -1;
@@ -30,7 +29,7 @@ int calc_bound(const vector<Bidomain> &domains) {
     return bound;
 }
 
-int selectV_index(const Bidomain *bd, const Rewards &rewards) {
+int selectV_index(const Bidomain *bd, Rewards &rewards) {
     gtype max_g = -1;
     int best_vtx = INT_MAX;
     for (int vtx: bd->left) {
@@ -50,7 +49,7 @@ int selectV_index(const Bidomain *bd, const Rewards &rewards) {
     return best_vtx;
 }
 
-int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
+int select_bidomain(const vector<Bidomain> &domains, Rewards &rewards,
                     int current_matching_size) {
     // Select the bidomain with the smallest max(leftsize, rightsize), breaking
     // ties on the smallest vertex index in the left set
@@ -207,7 +206,7 @@ int getNeighborOverlapScores(const Graph &g0, const Graph &g1, const vector<VtxP
 }
 
 int selectW_index(const Graph &g0, const Graph &g1, const vector<VtxPair> &current, const Bidomain *bd,
-                  const Rewards &rewards, const int v, const set<int> &wselected) {
+                  Rewards &rewards, const int v, const set<int> &wselected) {
     gtype max_g = -1;
     int best_vtx = INT_MAX;
     for (int vtx : bd->right) {
@@ -238,9 +237,9 @@ int selectW_index(const Graph &g0, const Graph &g1, const vector<VtxPair> &curre
 }
 
 vector<VtxPair>
-solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incumbent, list<Step *> &global_steps,
+solve(const Graph &g0, const Graph &g1, Rewards &global_rewards, vector<VtxPair> &incumbent, list<Step *> &global_steps,
       unsigned int matching_size_goal, Stats *stats) {
-
+    Rewards *rewards = nullptr;
     list<Step *> steps;
     while (true) {
         // pop one step from the global stack
@@ -261,6 +260,14 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
         steps.emplace_back(global_steps.back());
         global_steps.pop_back();
         lk.unlock();
+
+        // if local rewards are used, initialize them, else use the global rewards
+        if(arguments.local_rewards){
+            delete rewards;
+            rewards = new DoubleQRewards(g0.n, g1.n);
+        }else{
+            rewards = &global_rewards;
+        }
 
         // end cycle when there are no more steps, or when we have a W step after a certain number of steps
         int local_iter_count = 0;
@@ -302,8 +309,8 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                     stats->bestnodes = stats->nodes;
                     stats->bestfind = clock();
 
-                    unique_lock rlk(reward_mutex); // NB Check possible deadlock/Starvation!
-                    rewards.update_policy_counter(true);
+                    unique_lock rlk{rewards->reward_mutex};
+                    rewards->update_policy_counter(true);
                     rlk.unlock();
                 }
                 ilk.unlock();
@@ -322,7 +329,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 }
 
                 // Select a bidomain based on the heuristic
-                int bd_idx = select_bidomain(s->domains, rewards, (int) s->current.size());
+                int bd_idx = select_bidomain(s->domains, *rewards, (int) s->current.size());
                 if (bd_idx == -1) {
                     // In the MCCS case, there may be nothing we can branch on
                     continue;
@@ -330,11 +337,11 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 auto bd = &s->domains[bd_idx];
 
                 // Select vertex v (vertex with max reward)
-                int v = selectV_index(bd, rewards);
-  
-                unique_lock rlk(reward_mutex);
-                rewards.update_policy_counter(false);
-                rlk.unlock();
+                int v = selectV_index(bd, *rewards);
+
+                unique_lock lk{rewards->reward_mutex};
+                rewards->update_policy_counter(false);
+                lk.unlock();
 
                 // Next iteration try to select a vertex w to pair with v (convert this v step to a w step)
                 s->bd = bd;
@@ -345,12 +352,12 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
             /* W-step */
             if (s->w_iter < (int) s->bd->right.size()) {
-                int w = selectW_index(g0, g1, s->current, s->bd, rewards, s->v, s->wselected);
+                int w = selectW_index(g0, g1, s->current, s->bd, *rewards, s->v, s->wselected);
                 s->wselected.insert(w);
-                
-                unique_lock rlk(reward_mutex);
-                rewards.update_policy_counter(false);
-                rlk.unlock();
+
+                unique_lock lk{rewards->reward_mutex};
+                rewards->update_policy_counter(false);
+                lk.unlock();
 
 #if DEBUG
                 if (stats->nodes % 1 == 0) {
@@ -363,9 +370,9 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 vector<VtxPair> new_current = s->current;
                 Bidomain new_bd = *s->bd;
                 auto result = generate_new_domains(s->domains, new_current, new_bd, g0, g1, s->v, w);
-                
-                rlk.lock();
-                rewards.update_rewards(result, s->v, w, stats);
+
+                unique_lock rlk{rewards->reward_mutex};
+                rewards->update_rewards(result, s->v, w, stats);
                 rlk.unlock();
                 
                 s->w_iter++;

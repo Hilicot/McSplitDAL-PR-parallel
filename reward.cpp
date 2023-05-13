@@ -26,13 +26,13 @@ void Reward::reset(int value) {
     this->dal_component = 0;
 }
 
-gtype Reward::get_reward(bool normalized) const {
-    if (arguments.reward_policy.current_reward_policy == 0) // RL or LL policy
+gtype Reward::get_reward(int current_reward_policy, bool normalized) const {
+    if (current_reward_policy == 0) // RL or LL policy
         if (arguments.mcs_method == RL_DAL)
             return this->rl_component;
         else // if (arguments.mcs_method == LL_DAL)
             return this->ll_component;
-    else if (arguments.reward_policy.current_reward_policy == 1) // DAL policy
+    else if (current_reward_policy == 1) // DAL policy
         if (normalized)
             return normalized_reward;
         else
@@ -53,7 +53,7 @@ vector<Reward> DoubleQRewards::get_left_rewards() {
 }
 
 vector<Reward> DoubleQRewards::get_right_rewards(int v) {
-    if (arguments.mcs_method == RL_DAL && arguments.reward_policy.current_reward_policy == 0)
+    if (arguments.mcs_method == RL_DAL && current_reward_policy == 0)
         return this->SingleQ;
     else // if (arguments.mcs_method == LL_DAL)
         return this->Q[v];
@@ -79,8 +79,8 @@ void DoubleQRewards::initialize(const vector<int> &left, const vector<int> &righ
     }
 }
 
-void rotate_reward_policy() {
-    arguments.reward_policy.current_reward_policy = (arguments.reward_policy.current_reward_policy + 1) %
+void DoubleQRewards::rotate_reward_policy() {
+    current_reward_policy = (current_reward_policy + 1) %
                                                     arguments.reward_policy.reward_policies_num;
 }
 
@@ -117,11 +117,11 @@ void DoubleQRewards::randomize_rewards() {
 
 void DoubleQRewards::update_policy_counter(const bool restart_counter) {
     if (restart_counter) { // A better solution was found, reset the counter
-        arguments.reward_policy.policy_switch_counter = 0;
+        policy_switch_counter = 0;
     } else { // Increase the policy counter
-        arguments.reward_policy.policy_switch_counter++;
-        if (arguments.reward_policy.policy_switch_counter > arguments.reward_policy.reward_switch_policy_threshold) {
-            arguments.reward_policy.policy_switch_counter = 0;
+        policy_switch_counter++;
+        if (policy_switch_counter > arguments.reward_policy.reward_switch_policy_threshold) {
+            policy_switch_counter = 0;
             switch (arguments.reward_policy.switch_policy) {
                 case NO_CHANGE:
                     // Do nothing
@@ -178,7 +178,7 @@ void DoubleQRewards::update_rewards(const NewBidomainResult &new_domains_result,
         Q[v][w].update(reward, dal_reward);
 
         // Do not decay if current policy is RL!
-        if (arguments.mcs_method != RL_DAL || arguments.reward_policy.current_reward_policy != 0) {
+        if (arguments.mcs_method != RL_DAL || current_reward_policy != 0) {
             // TODO if we normalize, we might have to adjust the thresholds
             if (get_vertex_reward(v, false) > short_memory_threshold)
                 for (auto &r: V)
@@ -191,13 +191,13 @@ void DoubleQRewards::update_rewards(const NewBidomainResult &new_domains_result,
 }
 
 gtype DoubleQRewards::get_vertex_reward(int v, bool normalized) const {
-    return V[v].get_reward(normalized);
+    return V[v].get_reward(current_reward_policy, normalized);
 }
 
 gtype DoubleQRewards::get_pair_reward(int v, int w, bool normalized) const {
-    if (arguments.mcs_method == RL_DAL && arguments.reward_policy.current_reward_policy == 0)
-        return SingleQ[w].get_reward(normalized);
+    if (arguments.mcs_method == RL_DAL && current_reward_policy == 0)
+        return SingleQ[w].get_reward(current_reward_policy, normalized);
     else // if (arguments.mcs_method == LL_DAL)
-        return Q[v][w].get_reward(normalized);
+        return Q[v][w].get_reward(current_reward_policy, normalized);
 }
 

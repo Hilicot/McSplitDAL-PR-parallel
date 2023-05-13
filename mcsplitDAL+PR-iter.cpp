@@ -60,6 +60,7 @@ void set_default_arguments() {
     arguments.max_iter = 0;
     arguments.max_thread_blocks = 512;
     arguments.first_thread_goes_until_pruning = false;
+    arguments.local_rewards = false;
     arguments.random_start = false;
     arguments.arg_num = 0;
     arguments.sort_heuristic = new SortHeuristic::Degree();
