@@ -104,50 +104,9 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
     return best;
 }
 
-// multiway is for directed and/or labelled graphs
-NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair> &current, Bidomain &bd, const Graph &g0, const Graph &g1, const int v, const int w) {
-    set<int> left_excluded, right_excluded;
-
-    left_excluded.insert(v);
-    right_excluded.insert(w);
-    
-    current.emplace_back(v, w);
-
-    int v_leaf, w_leaf;
-    for (unsigned int i = 0, j = 0; i < g0.leaves[v].size() && j < g1.leaves[w].size();) {
-        if (g0.leaves[v][i].first < g1.leaves[w][j].first)
-            i++;
-        else if (g0.leaves[v][i].first > g1.leaves[w][j].first)
-            j++;
-        else {
-            const vector<int> &leaf0 = g0.leaves[v][i].second;
-            const vector<int> &leaf1 = g1.leaves[w][j].second;
-            for (unsigned int p = 0, q = 0; p < leaf0.size() && q < leaf1.size();) {
-                if (!std::binary_search(bd.left.begin(), bd.left.end(), leaf0[p]))
-                    p++;
-                else if (!std::binary_search(bd.right.begin(), bd.right.end(), leaf1[q]))
-                    q++;
-                else {
-                    v_leaf = leaf0[p], w_leaf = leaf1[q];
-                    p++, q++;
-                    current.emplace_back(v_leaf, w_leaf);
-                    left_excluded.insert(v_leaf);
-                    right_excluded.insert(w_leaf);
-                }
-            }
-            i++, j++;
-        }
-    }
-
-    vector<Bidomain> new_d;
-    new_d.reserve(d.size());
-    int j = -1;
-    int temp, total = 0;
-    for (const Bidomain &old_bd: d) {
-        list<int> left_matched, left_unmatched, right_matched, right_unmatched;
-        j++;
-
-        for (auto node: old_bd.left) {
+void repartition(const Bidomain &old_bd, set<int> &left_excluded, set<int> &right_excluded, list<int> &left_matched, list<int> &left_unmatched, 
+                    list<int> &right_matched, list<int> &right_unmatched, const Graph &g0, const Graph &g1, int v, int w) {
+    for (auto node: old_bd.left) {
             if (left_excluded.find(node) != left_excluded.end())
                 continue;
             if (g0.get(v, node))
@@ -164,25 +123,76 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
             else
                 right_unmatched.emplace_back(node);
         }
+}
+
+void divideAndConquer(vector<Bidomain>& new_d, list<int>& left, list<int>& right, bool is_adjacent) {
+    if (!left.empty() && !right.empty())
+        new_d.emplace_back(left, right, is_adjacent);
+}
+
+// multiway is for directed and/or labelled graphs
+NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair> &current, Bidomain &bd, const Graph &g0, const Graph &g1, const int v, const int w) {
+    set<int> left_excluded, right_excluded;
+
+    left_excluded.insert(v);
+    right_excluded.insert(w);
+    
+    current.emplace_back(v, w);
+
+    // int v_leaf, w_leaf;
+    // for (unsigned int i = 0, j = 0; i < g0.leaves[v].size() && j < g1.leaves[w].size();) {
+    //     if (g0.leaves[v][i].first < g1.leaves[w][j].first)
+    //         i++;
+    //     else if (g0.leaves[v][i].first > g1.leaves[w][j].first)
+    //         j++;
+    //     else {
+    //         const vector<int> &leaf0 = g0.leaves[v][i].second;
+    //         const vector<int> &leaf1 = g1.leaves[w][j].second;
+    //         for (unsigned int p = 0, q = 0; p < leaf0.size() && q < leaf1.size();) {
+    //             if (!std::binary_search(bd.left.begin(), bd.left.end(), leaf0[p]))
+    //                 p++;
+    //             else if (!std::binary_search(bd.right.begin(), bd.right.end(), leaf1[q]))
+    //                 q++;
+    //             else {
+    //                 v_leaf = leaf0[p], w_leaf = leaf1[q];
+    //                 p++, q++;
+    //                 current.emplace_back(v_leaf, w_leaf);
+    //                 left_excluded.insert(v_leaf);
+    //                 right_excluded.insert(w_leaf);
+    //             }
+    //         }
+    //         i++, j++;
+    //     }
+    // }
+
+    vector<Bidomain> new_d;
+    new_d.reserve(d.size());
+    int j = -1;
+    int temp, total = 0;
+    for (const Bidomain &old_bd: d) {
+        list<int> left_matched, left_unmatched, right_matched, right_unmatched;
+        j++;
+
+        repartition(old_bd, left_excluded, right_excluded, left_matched, left_unmatched, right_matched, right_unmatched, g0, g1, v, w);
 
         // compute reward
-        temp = std::min(old_bd.left.size() - 1, old_bd.right.size() - 1) - std::min(left_matched.size(), right_matched.size()) -
-               std::min(left_unmatched.size(), right_unmatched.size());
+        int old_size = (int)std::min(old_bd.left.size(), old_bd.right.size());
+        int new_size_matched = (int)std::min(left_matched.size(), right_matched.size());
+        int new_size_unmatched = std::min(left_unmatched.size(), right_unmatched.size());
+        temp = old_size - new_size_matched - new_size_unmatched;
         total += temp;
+        //cout << "total=" << total << "\ttemp=" << temp << "\told_size=" << old_size << "\tnew_size_matched=" << new_size_matched << "\tnew_size_unmatched=" << new_size_unmatched << endl;
 
-        if (!left_unmatched.empty() && !right_unmatched.empty()) {
-            new_d.emplace_back(std::move(left_unmatched), std::move(right_unmatched), old_bd.is_adjacent);
-        }
-        if (!left_matched.empty() && !right_matched.empty()) {
-            new_d.emplace_back(std::move(left_matched), std::move(right_matched), true);
-        }
+        divideAndConquer(new_d, left_unmatched, right_unmatched, old_bd.is_adjacent);
+        divideAndConquer(new_d, left_matched, right_matched, true);
     }
+
+    total -= (int)left_excluded.size();
 
     left_excluded.clear();
     right_excluded.clear();
 
-    NewBidomainResult result = {new_d, total};
-    return result;
+    return std::move(NewBidomainResult(new_d, total));
 }
 
 int getNeighborOverlapScores(const Graph &g0, const Graph &g1, const vector<VtxPair> &current, int v, int w) {
@@ -310,6 +320,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
                 // Prune the branch if the upper bound is too small
                 int bound = (int) s->current.size() + calc_bound(s->domains);
+                cout << stats->nodes << ": bound = " << bound << "\tincumbent = " << incumbent.size() << "\tcurrent = " << s->current.size() << endl;
                 if (bound <= (int) incumbent.size() || bound < (int) matching_size_goal) {
                     delete steps.back();
                     steps.pop_back();
@@ -362,7 +373,8 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 // TODO check these are deep copies
                 vector<VtxPair> new_current = s->current;
                 Bidomain new_bd = *s->bd;
-                auto result = generate_new_domains(s->domains, new_current, new_bd, g0, g1, s->v, w);
+                NewBidomainResult result = generate_new_domains(s->domains, new_current, new_bd, g0, g1, s->v, w);
+                cout << stats->nodes << ": reward = " << result.reward << endl;
                 
                 rlk.lock();
                 rewards.update_rewards(result, s->v, w, stats);
@@ -440,7 +452,7 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
         block_size = arguments.max_thread_blocks;   // so we set block_size to max_thread_blocks to disable it
     list<Step *> steps;
     // TODO remove g0_matched
-    Step *sp = new Step(std::move(domains), -1, -1, vector<VtxPair>());
+    Step *sp = new Step(domains, -1, -1, vector<VtxPair>());
     steps.emplace_back(sp);
     vector<VtxPair> incumbent;
     vector<thread> threads;

@@ -27,7 +27,8 @@ struct Bidomain {
     list<int> right;
     bool is_adjacent;
 
-    Bidomain(list<int> left, list<int> right, bool is_adjacent) : left(left), right(right), is_adjacent(is_adjacent) {};
+    // Bidomain(list<int> left, list<int> right, bool is_adjacent) : left(left), right(right), is_adjacent(is_adjacent) {};
+    Bidomain(const list<int>& left, const list<int>& right, bool is_adjacent): left(left), right(right), is_adjacent(is_adjacent) {}
 
     int get_max_len() const { return max(left.size(), right.size()); }
 };
@@ -35,6 +36,9 @@ struct Bidomain {
 struct NewBidomainResult {
     vector<Bidomain> new_domains;
     int reward;
+
+    NewBidomainResult(vector<Bidomain>& new_domains, int reward): new_domains(new_domains), reward(reward) {}
+
 };
 
 struct Step {
@@ -45,7 +49,7 @@ struct Step {
     int v;
     vector<VtxPair> current;
 
-    Step(vector<Bidomain> domains, int w_iter, int v, vector<VtxPair> current) : domains(domains), w_iter(w_iter), bd(nullptr), v(v), current(current) {
+    Step(vector<Bidomain> &domains, int w_iter, int v, vector<VtxPair> current) : domains(domains), w_iter(w_iter), bd(nullptr), v(v), current(current) {
         this->wselected = set<int>();
     };
 
