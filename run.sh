@@ -30,7 +30,7 @@ for pair in ascii_edgelists/* ; do
     echo "Processing $pair with timeout $timeout"
     pair_name=$(basename $pair)
     outfile="$output_folder/$pair_name.txt"
-    ./build/mcsplit-dal -At 60 -s pagerank -p 1 min_max -B 100000000 $g1 $g2 2>&1 | tee $outfile
+    ./build/mcsplit-dal -AI 1000 -s pagerank -p 1 min_max -B 100000000 $g1 $g2 2>&1 | tee $outfile
     echo "timeout: $timeout" >> $outfile
     break
 done 

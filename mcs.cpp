@@ -5,6 +5,8 @@
 #include "reward.h"
 #include <thread>
 #include <list>
+#include <unordered_set>
+#include <chrono>
 
 #define DEBUG 0
 
@@ -104,25 +106,27 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
     return best;
 }
 
-void repartition(const Bidomain &old_bd, set<int> &left_excluded, set<int> &right_excluded, list<int> &left_matched, list<int> &left_unmatched, 
+void repartition(const Bidomain &old_bd, unordered_set<int> &left_excluded, unordered_set<int> &right_excluded, list<int> &left_matched, list<int> &left_unmatched, 
                     list<int> &right_matched, list<int> &right_unmatched, const Graph &g0, const Graph &g1, int v, int w) {
-    for (auto node: old_bd.left) {
-            if (left_excluded.find(node) != left_excluded.end())
-                continue;
-            if (g0.get(v, node))
-                left_matched.emplace_back(node);
-            else
-                left_unmatched.emplace_back(node);
-        }
+    for (auto it = old_bd.left.begin(); it != old_bd.left.end(); ++it) {
+        auto& node = *it;
+        if (left_excluded.find(node) != left_excluded.end())
+            continue;
+        if (g0.get(v, node))
+            left_matched.emplace_back(node);
+        else
+            left_unmatched.emplace_back(node);
+    }
 
-        for (auto node: old_bd.right) {
-            if (right_excluded.find(node) != right_excluded.end())
-                continue;
-            if (g1.get(w, node))
-                right_matched.emplace_back(node);
-            else
-                right_unmatched.emplace_back(node);
-        }
+    for (auto it = old_bd.right.begin(); it != old_bd.right.end(); ++it) {
+        auto& node = *it;
+        if (right_excluded.find(node) != right_excluded.end())
+            continue;
+        if (g1.get(w, node))
+            right_matched.emplace_back(node);
+        else
+            right_unmatched.emplace_back(node);
+    }
 }
 
 void divideAndConquer(vector<Bidomain>& new_d, list<int>& left, list<int>& right, bool is_adjacent) {
@@ -132,7 +136,7 @@ void divideAndConquer(vector<Bidomain>& new_d, list<int>& left, list<int>& right
 
 // multiway is for directed and/or labelled graphs
 NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair> &current, Bidomain &bd, const Graph &g0, const Graph &g1, const int v, const int w) {
-    set<int> left_excluded, right_excluded;
+    unordered_set<int> left_excluded, right_excluded;
 
     left_excluded.insert(v);
     right_excluded.insert(w);
@@ -218,7 +222,7 @@ int getNeighborOverlapScores(const Graph &g0, const Graph &g1, const vector<VtxP
 }
 
 int selectW_index(const Graph &g0, const Graph &g1, const vector<VtxPair> &current, const Bidomain *bd,
-                  const Rewards &rewards, const int v, const set<int> &wselected) {
+                  const Rewards &rewards, const int v, const unordered_set<int> &wselected) {
     gtype max_g = -1;
     int best_vtx = INT_MAX;
     for (int vtx : bd->right) {
@@ -277,6 +281,8 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
         int local_iter_count = 0;
         while (!steps.empty() && (block_size < 0 || (int) steps.size() < block_size || steps.back()->w_iter == -1)) {
             Step *s = steps.back();
+            // auto t = std::chrono::high_resolution_clock::now();
+            // auto end = t;
 
             // check timeout
             if (stats->abort_due_to_timeout) {
@@ -287,6 +293,9 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
             /* V-step */
             if (s->w_iter == -1) {
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "V enter " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
                 stats->nodes++;
                 local_iter_count++;
 
@@ -335,6 +344,10 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
                 // Select a bidomain based on the heuristic
                 int bd_idx = select_bidomain(s->domains, rewards, (int) s->current.size());
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "V select domain " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
+                
                 if (bd_idx == -1) {
                     // In the MCCS case, there may be nothing we can branch on
                     continue;
@@ -344,6 +357,9 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
                 // Select vertex v (vertex with max reward)
                 int v = selectV_index(bd, rewards);
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "V select index " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
   
                 unique_lock rlk(reward_mutex);
                 rewards.update_policy_counter(false);
@@ -355,6 +371,9 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 s->v = v;
 
                 auto new_domains = s->domains;
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "V deep copies " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
                 if (bd->left.size() == 1) {
                     //cout << "Attention! ";
                     new_domains.erase(new_domains.begin() + bd_idx);
@@ -368,13 +387,22 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 Step *s2 = new Step(new_domains, -1, -1, s->current);
                 steps.emplace_back(s2);
                 steps.emplace_back(s);
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "V new steps " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
 
                 continue;
             }
 
             /* W-step */
             if (s->w_iter < (int) s->bd->right.size()) {
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "W enter " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
                 int w = selectW_index(g0, g1, s->current, s->bd, rewards, s->v, s->wselected);
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "W index " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
                 s->wselected.insert(w);
                 
                 unique_lock rlk(reward_mutex);
@@ -392,7 +420,13 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 // TODO check these are deep copies
                 vector<VtxPair> new_current = s->current;
                 Bidomain new_bd = *s->bd;
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "W deep copies " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
                 NewBidomainResult result = generate_new_domains(s->domains, new_current, new_bd, g0, g1, s->v, w);
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "W new domains " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
                 // cout << stats->nodes << ": reward = " << result.reward << endl;
                 
                 rlk.lock();
@@ -405,10 +439,16 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                     delete steps.back();
                     steps.pop_back();
                 }
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "W delete step if necessary " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
 
                 // next iterations select a new vertex v
                 Step *s2 = new Step(result.new_domains, -1, -1, new_current);
                 steps.emplace_back(s2);
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "W new step " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
                 
                 continue;
             }
@@ -471,7 +511,8 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
         block_size = arguments.max_thread_blocks;   // so we set block_size to max_thread_blocks to disable it
     list<Step *> steps;
     // TODO remove g0_matched
-    Step *sp = new Step(domains, -1, -1, vector<VtxPair>());
+    auto current = vector<VtxPair>();
+    Step *sp = new Step(domains, -1, -1, current);
     steps.emplace_back(sp);
     vector<VtxPair> incumbent;
     vector<thread> threads;

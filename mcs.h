@@ -5,6 +5,7 @@
 #include "graph.h"
 #include "args.h"
 #include "stats.h"
+#include <unordered_set>
 #include <set>
 #include <memory>
 #include <list>
@@ -43,14 +44,19 @@ struct NewBidomainResult {
 
 struct Step {
     vector<Bidomain> domains;
-    set<int> wselected;
+    unordered_set<int> wselected;
     int w_iter;
     Bidomain *bd;
     int v;
     vector<VtxPair> current;
 
-    Step(vector<Bidomain> &domains, int w_iter, int v, vector<VtxPair> current) : domains(domains), w_iter(w_iter), bd(nullptr), v(v), current(current) {
-        this->wselected = set<int>();
+    Step(const vector<Bidomain> &domains, int w_iter, int v, const vector<VtxPair> &current) {
+        this->wselected = unordered_set<int>();
+        this->domains = ref(domains);
+        this->w_iter = w_iter;
+        this->v = v;
+        this->current = ref(current);
+        this->bd = nullptr;
     };
 
 };
