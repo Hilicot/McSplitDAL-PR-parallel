@@ -27,7 +27,7 @@ bool reached_max_iter(Stats *stats) {
 int calc_bound(const vector<Bidomain> &domains) {
     int bound = 0;
     for (const Bidomain &bd: domains) {
-        bound += std::min((int)bd.left.size(), (int)bd.right.size());
+        bound += std::min((int) bd.left.size(), (int) bd.right.size());
     }
     return bound;
 }
@@ -64,7 +64,7 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
     int current;
     int best = -1;
 
-    for (i = 0; i < (int)domains.size(); i++) {
+    for (i = 0; i < (int) domains.size(); i++) {
         const Bidomain &bd = domains[i];
         if (arguments.connected && current_matching_size > 0 && !bd.is_adjacent)
             continue;
@@ -106,10 +106,11 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
     return best;
 }
 
-void repartition(const Bidomain &old_bd, unordered_set<int> &left_excluded, unordered_set<int> &right_excluded, list<int> &left_matched, list<int> &left_unmatched, 
-                    list<int> &right_matched, list<int> &right_unmatched, const Graph &g0, const Graph &g1, int v, int w) {
+void repartition(const Bidomain &old_bd, unordered_set<int> &left_excluded, unordered_set<int> &right_excluded,
+                 list<int> &left_matched, list<int> &left_unmatched,
+                 list<int> &right_matched, list<int> &right_unmatched, const Graph &g0, const Graph &g1, int v, int w) {
     for (auto it = old_bd.left.begin(); it != old_bd.left.end(); ++it) {
-        auto& node = *it;
+        auto &node = *it;
         if (left_excluded.find(node) != left_excluded.end())
             continue;
         if (g0.get(v, node))
@@ -119,7 +120,7 @@ void repartition(const Bidomain &old_bd, unordered_set<int> &left_excluded, unor
     }
 
     for (auto it = old_bd.right.begin(); it != old_bd.right.end(); ++it) {
-        auto& node = *it;
+        auto &node = *it;
         if (right_excluded.find(node) != right_excluded.end())
             continue;
         if (g1.get(w, node))
@@ -129,18 +130,20 @@ void repartition(const Bidomain &old_bd, unordered_set<int> &left_excluded, unor
     }
 }
 
-void divideAndConquer(vector<Bidomain>& new_d, list<int>& left, list<int>& right, bool is_adjacent) {
+void divideAndConquer(vector<Bidomain> &new_d, list<int> &left, list<int> &right, bool is_adjacent) {
     if (!left.empty() && !right.empty())
         new_d.emplace_back(left, right, is_adjacent);
 }
 
 // multiway is for directed and/or labelled graphs
-NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair> &current, Bidomain &bd, const Graph &g0, const Graph &g1, const int v, const int w) {
+NewBidomainResult
+generate_new_domains(const vector<Bidomain> *d, vector<VtxPair> &current, Bidomain &bd, const Graph &g0,
+                     const Graph &g1, const int v, const int w) {
     unordered_set<int> left_excluded, right_excluded;
 
     left_excluded.insert(v);
     right_excluded.insert(w);
-    
+
     current.emplace_back(v, w);
 
     int v_leaf, w_leaf;
@@ -155,9 +158,11 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
             for (unsigned int p = 0, q = 0; p < leaf0.size() && q < leaf1.size();) {
                 v_leaf = leaf0[p], w_leaf = leaf1[q];
 
-                if (std::find_if(current.begin(), current.end(), [v_leaf](VtxPair p) { return p.v == v_leaf; }) != current.end())
+                if (std::find_if(current.begin(), current.end(), [v_leaf](VtxPair p) { return p.v == v_leaf; }) !=
+                    current.end())
                     p++;
-                if (std::find_if(current.begin(), current.end(), [w_leaf](VtxPair p) { return p.w == w_leaf; }) != current.end())
+                if (std::find_if(current.begin(), current.end(), [w_leaf](VtxPair p) { return p.w == w_leaf; }) !=
+                    current.end())
                     q++;
                 else {
                     p++, q++;
@@ -170,26 +175,27 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
         }
     }
 
-    vector<Bidomain> new_d;
-    new_d.reserve(d.size());
+    auto *new_d = new vector<Bidomain>();
+    new_d->reserve(d->size());
     int j = -1;
     int temp, total = 0;
-    for (const Bidomain &old_bd: d) {
+    for (const Bidomain &old_bd: (*d)) {
         list<int> left_matched, left_unmatched, right_matched, right_unmatched;
         j++;
 
-        repartition(old_bd, left_excluded, right_excluded, left_matched, left_unmatched, right_matched, right_unmatched, g0, g1, v, w);
+        repartition(old_bd, left_excluded, right_excluded, left_matched, left_unmatched, right_matched, right_unmatched,
+                    g0, g1, v, w);
 
         // compute reward
-        int old_size = (int)std::min(old_bd.left.size(), old_bd.right.size());
-        int new_size_matched = (int)std::min(left_matched.size(), right_matched.size());
+        int old_size = (int) std::min(old_bd.left.size(), old_bd.right.size());
+        int new_size_matched = (int) std::min(left_matched.size(), right_matched.size());
         int new_size_unmatched = std::min(left_unmatched.size(), right_unmatched.size());
         temp = old_size - new_size_matched - new_size_unmatched;
         total += temp;
         //cout << "total=" << total << "\ttemp=" << temp << "\told_size=" << old_size << "\tnew_size_matched=" << new_size_matched << "\tnew_size_unmatched=" << new_size_unmatched << endl;
 
-        divideAndConquer(new_d, left_unmatched, right_unmatched, old_bd.is_adjacent);
-        divideAndConquer(new_d, left_matched, right_matched, true);
+        divideAndConquer((*new_d), left_unmatched, right_unmatched, old_bd.is_adjacent);
+        divideAndConquer((*new_d), left_matched, right_matched, true);
     }
 
     total -= 1;
@@ -197,7 +203,7 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
     left_excluded.clear();
     right_excluded.clear();
 
-    return std::move(NewBidomainResult(new_d, total));
+    return {new_d, total};
 }
 
 int getNeighborOverlapScores(const Graph &g0, const Graph &g1, const vector<VtxPair> &current, int v, int w) {
@@ -225,7 +231,7 @@ int selectW_index(const Graph &g0, const Graph &g1, const vector<VtxPair> &curre
                   const Rewards &rewards, const int v, const unordered_set<int> &wselected) {
     gtype max_g = -1;
     int best_vtx = INT_MAX;
-    for (int vtx : bd->right) {
+    for (int vtx: bd->right) {
         if (wselected.find(vtx) == wselected.end()) {
             gtype pair_reward = 0;
             // Compute overlap scores
@@ -287,7 +293,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
             // check timeout
             if (stats->abort_due_to_timeout) {
                 steps_cv.notify_all();
-                while(!steps.empty()) delete steps.front(), steps.pop_front(); // Dealloc memory
+                while (!steps.empty()) delete steps.front(), steps.pop_front(); // Dealloc memory
                 return incumbent;
             }
 
@@ -303,7 +309,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 if (reached_max_iter(stats)) {
                     cout << "Reached " << stats->nodes << " iterations" << endl;
                     steps_cv.notify_all();
-                    while(!steps.empty()) delete steps.front(), steps.pop_front(); // Dealloc memory
+                    while (!steps.empty()) delete steps.front(), steps.pop_front(); // Dealloc memory
                     return incumbent;
                 }
 
@@ -315,7 +321,8 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                         incumbent.push_back(pr);
                     }
                     if (!arguments.quiet) {
-                        cout << "Incumbent size: " << incumbent.size() << " after " << stats->nodes << " iterations" << endl;
+                        cout << "Incumbent size: " << incumbent.size() << " after " << stats->nodes << " iterations"
+                             << endl;
                     }
 
                     stats->bestcount = stats->cutbranches + 1;
@@ -329,13 +336,13 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 ilk.unlock();
 
                 // Prune the branch if the upper bound is too small
-                int bound = (int) s->current.size() + calc_bound(s->domains);
+                int bound = (int) s->current.size() + calc_bound((*s->domains));
                 // cout << stats->nodes << ": bound = " << bound << "\tincumbent = " << incumbent.size() << "\tcurrent = " << s->current.size() << endl;
                 if (bound <= (int) incumbent.size() || bound < (int) matching_size_goal) {
                     delete steps.back();
                     steps.pop_back();
                     // If I am the first thread, set the block_size
-                    if(block_size < 0){
+                    if (block_size < 0) {
                         block_size = arguments.max_thread_blocks;
                     }
                     stats->cutbranches++;
@@ -343,24 +350,24 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 }
 
                 // Select a bidomain based on the heuristic
-                int bd_idx = select_bidomain(s->domains, rewards, (int) s->current.size());
+                int bd_idx = select_bidomain((*s->domains), rewards, (int) s->current.size());
                 // end = std::chrono::high_resolution_clock::now();
                 // cout << "V select domain " << std::chrono::duration<double>(end - t).count() << endl;
                 // t = end;
-                
+
                 if (bd_idx == -1) {
                     // In the MCCS case, there may be nothing we can branch on
                     continue;
                 }
 
-                auto bd = &s->domains[bd_idx];
+                auto bd = &(*s->domains)[bd_idx];
 
                 // Select vertex v (vertex with max reward)
                 int v = selectV_index(bd, rewards);
                 // end = std::chrono::high_resolution_clock::now();
                 // cout << "V select index " << std::chrono::duration<double>(end - t).count() << endl;
                 // t = end;
-  
+
                 unique_lock rlk(reward_mutex);
                 rewards.update_policy_counter(false);
                 rlk.unlock();
@@ -369,24 +376,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 s->bd = bd;
                 s->w_iter = 0;
                 s->v = v;
-
-                auto new_domains = s->domains;
-                // end = std::chrono::high_resolution_clock::now();
-                // cout << "V deep copies " << std::chrono::duration<double>(end - t).count() << endl;
-                // t = end;
-                if (bd->left.size() == 1) {
-                    //cout << "Attention! ";
-                    new_domains.erase(new_domains.begin() + bd_idx);
-                    //cout << "new size: " << new_domains.size() << " old size: " << s->domains.size() << endl;
-                } else {
-                    //cout << "Less attention! ";
-                    new_domains[bd_idx].left.erase(std::find(new_domains[bd_idx].left.begin(), new_domains[bd_idx].left.end(), v));
-                    //cout << "new left size: " << new_domains[bd_idx].left.size() << " old left size: " << s->domains[bd_idx].left.size() << endl;
-                }
-                steps.pop_back();
-                Step *s2 = new Step(new_domains, -1, -1, s->current);
-                steps.emplace_back(s2);
-                steps.emplace_back(s);
+                s->bd_idx = bd_idx;
                 // end = std::chrono::high_resolution_clock::now();
                 // cout << "V new steps " << std::chrono::duration<double>(end - t).count() << endl;
                 // t = end;
@@ -404,7 +394,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 // cout << "W index " << std::chrono::duration<double>(end - t).count() << endl;
                 // t = end;
                 s->wselected.insert(w);
-                
+
                 unique_lock rlk(reward_mutex);
                 rewards.update_policy_counter(false);
                 rlk.unlock();
@@ -428,20 +418,12 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 // cout << "W new domains " << std::chrono::duration<double>(end - t).count() << endl;
                 // t = end;
                 // cout << stats->nodes << ": reward = " << result.reward << endl;
-                
+
                 rlk.lock();
                 rewards.update_rewards(result, s->v, w, stats);
                 rlk.unlock();
-                
+
                 s->w_iter++;
-                // if this is the last W vertex, remove current W step
-                if(s->w_iter >= (int) s->bd->right.size()) {
-                    delete steps.back();
-                    steps.pop_back();
-                }
-                // end = std::chrono::high_resolution_clock::now();
-                // cout << "W delete step if necessary " << std::chrono::duration<double>(end - t).count() << endl;
-                // t = end;
 
                 // next iterations select a new vertex v
                 Step *s2 = new Step(result.new_domains, -1, -1, new_current);
@@ -449,7 +431,36 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 // end = std::chrono::high_resolution_clock::now();
                 // cout << "W new step " << std::chrono::duration<double>(end - t).count() << endl;
                 // t = end;
-                
+
+                // if this is the last W vertex, transform this step to a backtrack V step
+                if (s->w_iter >= (int) s->bd->right.size()) {
+                    // end = std::chrono::high_resolution_clock::now();
+                    // cout << "V deep copies " << std::chrono::duration<double>(end - t).count() << endl;
+                    // t = end;
+                    if (s->bd->right.size() == 0) {
+                        delete steps.back();
+                        steps.pop_back();
+                    } else {
+                        if (s->bd->left.size() == 1) {
+                            //cout << "Attention! ";
+                            s->domains->erase(s->domains->begin() + s->bd_idx);
+                            //cout << "new size: " << s->domains.size() << " old size: " << s->domains.size() << endl;
+                        } else {
+                            //cout << "Less attention! ";
+                            (*s->domains)[s->bd_idx].left.erase(
+                                    std::find((*s->domains)[s->bd_idx].left.begin(), (*s->domains)[s->bd_idx].left.end(), s->v));
+                            //cout << "new left size: " << s->domains[bd_idx].left.size() << " old left size: " << s->domains[bd_idx].left.size() << endl;
+                        }
+
+                        s->v = -1;
+                        s->w_iter = -1;
+                    }
+
+                }
+                // end = std::chrono::high_resolution_clock::now();
+                // cout << "W delete step if necessary " << std::chrono::duration<double>(end - t).count() << endl;
+                // t = end;
+
                 continue;
             }
         }
@@ -507,17 +518,17 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
 
     // Start threads
     stats->nodes = 0;
-    if(!arguments.first_thread_goes_until_pruning) // by default the first thread goes until pruning because block_size = -1
+    if (!arguments.first_thread_goes_until_pruning) // by default the first thread goes until pruning because block_size = -1
         block_size = arguments.max_thread_blocks;   // so we set block_size to max_thread_blocks to disable it
     list<Step *> steps;
     // TODO remove g0_matched
     auto current = vector<VtxPair>();
-    Step *sp = new Step(domains, -1, -1, current);
+    Step *sp = new Step(&domains, -1, -1, current);
     steps.emplace_back(sp);
     vector<VtxPair> incumbent;
     vector<thread> threads;
     for (int i = 0; i < arguments.threads; i++) {
-        cout << "Starting thread " << i+1 << " out of " << arguments.threads << endl; 
+        cout << "Starting thread " << i + 1 << " out of " << arguments.threads << endl;
         //stats->start = clock();
         stats->nodes = 0;
         threads.emplace_back(solve, g0, g1, ref(rewards), ref(incumbent), ref(steps), 1, stats);
@@ -527,7 +538,7 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
         if (t.joinable())
             t.join();
 
-    while(!steps.empty()) delete steps.front(), steps.pop_front(); // Dealloc memory
+    while (!steps.empty()) delete steps.front(), steps.pop_front(); // Dealloc memory
 
     if (arguments.timeout && double(clock() - stats->start) / CLOCKS_PER_SEC > arguments.timeout) {
         cout << "time out" << endl;

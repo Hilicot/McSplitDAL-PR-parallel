@@ -35,30 +35,31 @@ struct Bidomain {
 };
 
 struct NewBidomainResult {
-    vector<Bidomain> new_domains;
+    vector<Bidomain> *new_domains;
     int reward;
 
-    NewBidomainResult(vector<Bidomain>& new_domains, int reward): new_domains(new_domains), reward(reward) {}
+    NewBidomainResult(vector<Bidomain> *new_domains, int reward): new_domains(new_domains), reward(reward) {}
 
 };
 
 struct Step {
-    vector<Bidomain> domains;
+    vector<Bidomain> *domains;
     unordered_set<int> wselected;
     int w_iter;
     Bidomain *bd;
+    int bd_idx;
     int v;
     vector<VtxPair> current;
 
-    Step(const vector<Bidomain> &domains, int w_iter, int v, const vector<VtxPair> &current) {
+    Step(vector<Bidomain> *domains, int w_iter, int v, const vector<VtxPair> &current) {
         this->wselected = unordered_set<int>();
-        this->domains = ref(domains);
+        this->domains = domains;
         this->w_iter = w_iter;
         this->v = v;
         this->current = ref(current);
         this->bd = nullptr;
+        this->bd_idx = -1;
     };
-
 };
 
 vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *stats);
