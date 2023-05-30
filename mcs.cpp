@@ -106,35 +106,6 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
     return best;
 }
 
-void repartition(const Bidomain &old_bd, unordered_set<int> &left_excluded, unordered_set<int> &right_excluded,
-                 list<int> &left_matched, list<int> &left_unmatched,
-                 list<int> &right_matched, list<int> &right_unmatched, const Graph &g0, const Graph &g1, int v, int w) {
-    for (auto it = old_bd.left.begin(); it != old_bd.left.end(); ++it) {
-        auto &node = *it;
-        if (left_excluded.find(node) != left_excluded.end())
-            continue;
-        if (g0.get(v, node))
-            left_matched.emplace_back(node);
-        else
-            left_unmatched.emplace_back(node);
-    }
-
-    for (auto it = old_bd.right.begin(); it != old_bd.right.end(); ++it) {
-        auto &node = *it;
-        if (right_excluded.find(node) != right_excluded.end())
-            continue;
-        if (g1.get(w, node))
-            right_matched.emplace_back(node);
-        else
-            right_unmatched.emplace_back(node);
-    }
-}
-
-void divideAndConquer(vector<Bidomain> &new_d, list<int> &left, list<int> &right, bool is_adjacent) {
-    if (!left.empty() && !right.empty())
-        new_d.emplace_back(left, right, is_adjacent);
-}
-
 // multiway is for directed and/or labelled graphs
 NewBidomainResult
 generate_new_domains(const vector<Bidomain> *d, vector<VtxPair> &current, Bidomain &bd, const Graph &g0,
@@ -183,8 +154,25 @@ generate_new_domains(const vector<Bidomain> *d, vector<VtxPair> &current, Bidoma
         list<int> left_matched, left_unmatched, right_matched, right_unmatched;
         j++;
 
-        repartition(old_bd, left_excluded, right_excluded, left_matched, left_unmatched, right_matched, right_unmatched,
-                    g0, g1, v, w);
+        for (auto it = old_bd.left.begin(); it != old_bd.left.end(); ++it) {
+            auto &node = *it;
+            if (left_excluded.find(node) != left_excluded.end())
+                continue;
+            if (g0.get(v, node))
+                left_matched.emplace_back(node);
+            else
+                left_unmatched.emplace_back(node);
+        }
+
+        for (auto it = old_bd.right.begin(); it != old_bd.right.end(); ++it) {
+            auto &node = *it;
+            if (right_excluded.find(node) != right_excluded.end())
+                continue;
+            if (g1.get(w, node))
+                right_matched.emplace_back(node);
+            else
+                right_unmatched.emplace_back(node);
+        }
 
         // compute reward
         int old_size = (int) std::min(old_bd.left.size(), old_bd.right.size());
@@ -194,8 +182,11 @@ generate_new_domains(const vector<Bidomain> *d, vector<VtxPair> &current, Bidoma
         total += temp;
         //cout << "total=" << total << "\ttemp=" << temp << "\told_size=" << old_size << "\tnew_size_matched=" << new_size_matched << "\tnew_size_unmatched=" << new_size_unmatched << endl;
 
-        divideAndConquer((*new_d), left_unmatched, right_unmatched, old_bd.is_adjacent);
-        divideAndConquer((*new_d), left_matched, right_matched, true);
+        if (!left_unmatched.empty() && !right_unmatched.empty())
+            (*new_d).emplace_back(left_unmatched, right_unmatched, old_bd.is_adjacent);
+
+        if (!left_matched.empty() && !right_matched.empty())
+            (*new_d).emplace_back(left_matched, right_matched, true);
     }
 
     total -= 1;
@@ -402,7 +393,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 #if DEBUG
                 if (stats->nodes % 1 == 0) {
                     //cout << "w_iter: " << s->w_iter << endl;
-                    cout << "nodes: " << stats->nodes << ", v: " << s->v << ", w: " << w << ", size: " << s->current.size() << ", num_doms: " << s->domains.size()
+                    cout << "nodes: " << stats->nodes << ", v: " << s->v << ", w: " << w << ", size: " << s->current.size() << ", num_doms: " << (*s->domains).size()
                          << ", dom: " << s->bd->left.size() - 1 << " " << s->bd->right.size() - 1 << endl; // ", steps: " << steps.size()<< endl;
                 }
 #endif
@@ -486,7 +477,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *stats) {
     Rewards &rewards = *(Rewards *) rewards_p;
 
-    auto domains = vector<Bidomain>{};
+    auto *domains = new vector<Bidomain>{};
 
     std::set<unsigned int> left_labels;
     std::set<unsigned int> right_labels;
@@ -513,7 +504,7 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
             if (g1.adjlist[i].label == label)
                 right.push_back(i);
 
-        domains.emplace_back(left, right, false);
+        (*domains).emplace_back(left, right, false);
     }
 
     // Start threads
@@ -523,7 +514,7 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
     list<Step *> steps;
     // TODO remove g0_matched
     auto current = vector<VtxPair>();
-    Step *sp = new Step(&domains, -1, -1, current);
+    Step *sp = new Step(domains, -1, -1, current);
     steps.emplace_back(sp);
     vector<VtxPair> incumbent;
     vector<thread> threads;

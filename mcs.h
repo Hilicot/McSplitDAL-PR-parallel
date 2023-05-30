@@ -60,6 +60,10 @@ struct Step {
         this->bd = nullptr;
         this->bd_idx = -1;
     };
+
+    ~Step() {
+        delete this->domains;
+    }
 };
 
 vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *stats);
