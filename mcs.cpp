@@ -90,10 +90,10 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
                           (int) bd.left.size() * (int) bd.right.size();
             if (current < min_size) {
                 min_size = current;
-                min_tie_breaker = bd.left.front();
+                min_tie_breaker = selectV_index(&bd, rewards);
                 best = i;
             } else if (current == min_size) {
-                tie_breaker = bd.left.front();
+                tie_breaker = selectV_index(&bd, rewards);
                 if (tie_breaker < min_tie_breaker) {
                     min_tie_breaker = tie_breaker;
                     best = i;
@@ -139,31 +139,32 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
     
     current.emplace_back(v, w);
 
-    // int v_leaf, w_leaf;
-    // for (unsigned int i = 0, j = 0; i < g0.leaves[v].size() && j < g1.leaves[w].size();) {
-    //     if (g0.leaves[v][i].first < g1.leaves[w][j].first)
-    //         i++;
-    //     else if (g0.leaves[v][i].first > g1.leaves[w][j].first)
-    //         j++;
-    //     else {
-    //         const vector<int> &leaf0 = g0.leaves[v][i].second;
-    //         const vector<int> &leaf1 = g1.leaves[w][j].second;
-    //         for (unsigned int p = 0, q = 0; p < leaf0.size() && q < leaf1.size();) {
-    //             if (!std::binary_search(bd.left.begin(), bd.left.end(), leaf0[p]))
-    //                 p++;
-    //             else if (!std::binary_search(bd.right.begin(), bd.right.end(), leaf1[q]))
-    //                 q++;
-    //             else {
-    //                 v_leaf = leaf0[p], w_leaf = leaf1[q];
-    //                 p++, q++;
-    //                 current.emplace_back(v_leaf, w_leaf);
-    //                 left_excluded.insert(v_leaf);
-    //                 right_excluded.insert(w_leaf);
-    //             }
-    //         }
-    //         i++, j++;
-    //     }
-    // }
+    int v_leaf, w_leaf;
+    for (unsigned int i = 0, j = 0; i < g0.leaves[v].size() && j < g1.leaves[w].size();) {
+        if (g0.leaves[v][i].first < g1.leaves[w][j].first)
+            i++;
+        else if (g0.leaves[v][i].first > g1.leaves[w][j].first)
+            j++;
+        else {
+            const vector<int> &leaf0 = g0.leaves[v][i].second;
+            const vector<int> &leaf1 = g1.leaves[w][j].second;
+            for (unsigned int p = 0, q = 0; p < leaf0.size() && q < leaf1.size();) {
+                v_leaf = leaf0[p], w_leaf = leaf1[q];
+
+                if (std::find_if(current.begin(), current.end(), [v_leaf](VtxPair p) { return p.v == v_leaf; }) != current.end())
+                    p++;
+                if (std::find_if(current.begin(), current.end(), [w_leaf](VtxPair p) { return p.w == w_leaf; }) != current.end())
+                    q++;
+                else {
+                    p++, q++;
+                    current.emplace_back(v_leaf, w_leaf);
+                    left_excluded.insert(v_leaf);
+                    right_excluded.insert(w_leaf);
+                }
+            }
+            i++, j++;
+        }
+    }
 
     vector<Bidomain> new_d;
     new_d.reserve(d.size());
@@ -187,7 +188,7 @@ NewBidomainResult generate_new_domains(const vector<Bidomain> &d, vector<VtxPair
         divideAndConquer(new_d, left_matched, right_matched, true);
     }
 
-    total -= (int)left_excluded.size();
+    total -= 1;
 
     left_excluded.clear();
     right_excluded.clear();
@@ -320,7 +321,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
                 // Prune the branch if the upper bound is too small
                 int bound = (int) s->current.size() + calc_bound(s->domains);
-                cout << stats->nodes << ": bound = " << bound << "\tincumbent = " << incumbent.size() << "\tcurrent = " << s->current.size() << endl;
+                // cout << stats->nodes << ": bound = " << bound << "\tincumbent = " << incumbent.size() << "\tcurrent = " << s->current.size() << endl;
                 if (bound <= (int) incumbent.size() || bound < (int) matching_size_goal) {
                     delete steps.back();
                     steps.pop_back();
@@ -338,6 +339,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                     // In the MCCS case, there may be nothing we can branch on
                     continue;
                 }
+
                 auto bd = &s->domains[bd_idx];
 
                 // Select vertex v (vertex with max reward)
@@ -351,6 +353,22 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 s->bd = bd;
                 s->w_iter = 0;
                 s->v = v;
+
+                auto new_domains = s->domains;
+                if (bd->left.size() == 1) {
+                    //cout << "Attention! ";
+                    new_domains.erase(new_domains.begin() + bd_idx);
+                    //cout << "new size: " << new_domains.size() << " old size: " << s->domains.size() << endl;
+                } else {
+                    //cout << "Less attention! ";
+                    new_domains[bd_idx].left.erase(std::find(new_domains[bd_idx].left.begin(), new_domains[bd_idx].left.end(), v));
+                    //cout << "new left size: " << new_domains[bd_idx].left.size() << " old left size: " << s->domains[bd_idx].left.size() << endl;
+                }
+                steps.pop_back();
+                Step *s2 = new Step(new_domains, -1, -1, s->current);
+                steps.emplace_back(s2);
+                steps.emplace_back(s);
+
                 continue;
             }
 
@@ -365,7 +383,8 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
 #if DEBUG
                 if (stats->nodes % 1 == 0) {
-                    cout << "nodes: " << stats->nodes << ", v: " << s->v << ", w: " << w << ", size: " << s->current.size()
+                    //cout << "w_iter: " << s->w_iter << endl;
+                    cout << "nodes: " << stats->nodes << ", v: " << s->v << ", w: " << w << ", size: " << s->current.size() << ", num_doms: " << s->domains.size()
                          << ", dom: " << s->bd->left.size() - 1 << " " << s->bd->right.size() - 1 << endl; // ", steps: " << steps.size()<< endl;
                 }
 #endif
@@ -374,7 +393,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 vector<VtxPair> new_current = s->current;
                 Bidomain new_bd = *s->bd;
                 NewBidomainResult result = generate_new_domains(s->domains, new_current, new_bd, g0, g1, s->v, w);
-                cout << stats->nodes << ": reward = " << result.reward << endl;
+                // cout << stats->nodes << ": reward = " << result.reward << endl;
                 
                 rlk.lock();
                 rewards.update_rewards(result, s->v, w, stats);
