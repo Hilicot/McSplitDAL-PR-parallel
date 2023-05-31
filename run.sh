@@ -1,12 +1,5 @@
 #!/bin/bash
 
-# run just one small experiment
-# g0=/home/calabrese/Projects/mcsplit/McSplit2/dataset/small/mcs10_b03m_s100.A00
-# g1=/home/calabrese/Projects/mcsplit/McSplit2/dataset/small/mcs10_b03m_s100.B00
-# ./build/mcsplit-dal -t 10 -s closeness min_max $g0 $g1
-
-# exit 0
-
 results_folder="results"
 desc=${1:-Default description}
 
@@ -14,6 +7,14 @@ output_folder="$results_folder/results_dal_$(date "+%Y.%m.%d-%H.%M.%S")"
 mkdir -p $output_folder
 #write description
 echo $desc > $output_folder/description.txt
+
+# run just one small experiment
+outfile="$output_folder/test.txt"
+g0=/home/calabrese/Projects/mcsplit/McSplit2/dataset/big/snap_as_s1470.A709.txt
+g1=/home/calabrese/Projects/mcsplit/McSplit2/dataset/big/snap_as_s1476.A712.txt
+./build/mcsplit-dal -AI 2000000 -s pagerank -p 1 -B 10000000 min_max $g0 $g1 2>&1 | tee $outfile
+exit 0
+
 counter=0
 for pair in ascii_edgelists/* ; do
     if [ ! -d "$pair" ]; then
@@ -30,7 +31,7 @@ for pair in ascii_edgelists/* ; do
     echo "Processing $pair with timeout $timeout"
     pair_name=$(basename $pair)
     outfile="$output_folder/$pair_name.txt"
-    ./build/mcsplit-dal -t 10 -s pagerank -p 4 -B 64 min_max $g1 $g2 2>&1 | tee $outfile
+    ./build/mcsplit-dal -AI 1000000 -s pagerank -p 1 -B 10000000 min_max $g1 $g2 2>&1 | tee $outfile
     echo "timeout: $timeout" >> $outfile
     break
 done 

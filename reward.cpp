@@ -149,7 +149,7 @@ void DoubleQRewards::update_policy_counter(const bool restart_counter) {
 
 void DoubleQRewards::update_rewards(const NewBidomainResult &new_domains_result, int v, int w, Stats *stats) {
     gtype reward = new_domains_result.reward;
-    const vector<Bidomain> &new_domains = new_domains_result.new_domains;
+    const vector<Bidomain> &new_domains = *new_domains_result.new_domains;
 
     // Compute DAL reward
     gtype dal_reward = 0;
