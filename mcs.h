@@ -24,12 +24,12 @@ struct VtxPair {
 };
 
 struct Bidomain {
-    list<int> left;
-    list<int> right;
+    vector<int> left;
+    vector<int> right;
     bool is_adjacent;
 
     // Bidomain(list<int> left, list<int> right, bool is_adjacent) : left(left), right(right), is_adjacent(is_adjacent) {};
-    Bidomain(const list<int>& left, const list<int>& right, bool is_adjacent): left(left), right(right), is_adjacent(is_adjacent) {}
+    Bidomain(const vector<int>& left, const vector<int>& right, bool is_adjacent): left(left), right(right), is_adjacent(is_adjacent) {}
 
     int get_max_len() const { return max(left.size(), right.size()); }
 };
@@ -49,20 +49,21 @@ struct Step {
     Bidomain *bd;
     int bd_idx;
     int v;
-    vector<VtxPair> current;
+    vector<VtxPair> *current;
 
-    Step(vector<Bidomain> *domains, int w_iter, int v, const vector<VtxPair> &current) {
+    Step(vector<Bidomain> *domains, int w_iter, int v, vector<VtxPair> *current) {
         this->wselected = unordered_set<int>();
         this->domains = domains;
         this->w_iter = w_iter;
         this->v = v;
-        this->current = ref(current);
+        this->current = current;
         this->bd = nullptr;
         this->bd_idx = -1;
     };
 
     ~Step() {
         delete this->domains;
+        delete this->current;
     }
 };
 

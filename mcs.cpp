@@ -107,15 +107,15 @@ int select_bidomain(const vector<Bidomain> &domains, const Rewards &rewards,
 }
 
 // multiway is for directed and/or labelled graphs
-NewBidomainResult
-generate_new_domains(const vector<Bidomain> *d, vector<VtxPair> &current, Bidomain &bd, const Graph &g0,
+NewBidomainResult 
+generate_new_domains(const vector<Bidomain> *d, vector<VtxPair> *current, const Graph &g0,
                      const Graph &g1, const int v, const int w) {
     unordered_set<int> left_excluded, right_excluded;
 
     left_excluded.insert(v);
     right_excluded.insert(w);
 
-    current.emplace_back(v, w);
+    (*current).emplace_back(v, w);
 
     int v_leaf, w_leaf;
     for (unsigned int i = 0, j = 0; i < g0.leaves[v].size() && j < g1.leaves[w].size();) {
@@ -129,15 +129,15 @@ generate_new_domains(const vector<Bidomain> *d, vector<VtxPair> &current, Bidoma
             for (unsigned int p = 0, q = 0; p < leaf0.size() && q < leaf1.size();) {
                 v_leaf = leaf0[p], w_leaf = leaf1[q];
 
-                if (std::find_if(current.begin(), current.end(), [v_leaf](VtxPair p) { return p.v == v_leaf; }) !=
-                    current.end())
+                if (std::find_if((*current).begin(), (*current).end(), [v_leaf](VtxPair p) { return p.v == v_leaf; }) !=
+                    (*current).end())
                     p++;
-                if (std::find_if(current.begin(), current.end(), [w_leaf](VtxPair p) { return p.w == w_leaf; }) !=
-                    current.end())
+                if (std::find_if((*current).begin(), (*current).end(), [w_leaf](VtxPair p) { return p.w == w_leaf; }) !=
+                    (*current).end())
                     q++;
                 else {
                     p++, q++;
-                    current.emplace_back(v_leaf, w_leaf);
+                    (*current).emplace_back(v_leaf, w_leaf);
                     left_excluded.insert(v_leaf);
                     right_excluded.insert(w_leaf);
                 }
@@ -151,9 +151,10 @@ generate_new_domains(const vector<Bidomain> *d, vector<VtxPair> &current, Bidoma
     int j = -1;
     int temp, total = 0;
     for (const Bidomain &old_bd: (*d)) {
-        list<int> left_matched, left_unmatched, right_matched, right_unmatched;
+        vector<int> left_matched, left_unmatched, right_matched, right_unmatched;
         j++;
 
+        //#pragma omp parallel for
         for (auto it = old_bd.left.begin(); it != old_bd.left.end(); ++it) {
             auto &node = *it;
             if (left_excluded.find(node) != left_excluded.end())
@@ -197,19 +198,19 @@ generate_new_domains(const vector<Bidomain> *d, vector<VtxPair> &current, Bidoma
     return {new_d, total};
 }
 
-int getNeighborOverlapScores(const Graph &g0, const Graph &g1, const vector<VtxPair> &current, int v, int w) {
+int getNeighborOverlapScores(const Graph &g0, const Graph &g1, vector<VtxPair> *current, int v, int w) {
     int overlap_v = 0;
     int overlap_w = 0;
     // get number of selected neighbors of v
     for (auto &neighbor: g0.adjlist[v].adjNodes)
-        for (auto j: current)
+        for (auto j: *current)
             if (j.v == (int) neighbor.id) {
                 overlap_v++;
                 break;
             }
     // get number of selected neighbors of w
     for (auto &neighbor: g1.adjlist[w].adjNodes)
-        for (auto j: current)
+        for (auto j: *current)
             if (j.w == (int) neighbor.id) {
                 overlap_w++;
                 break;
@@ -218,7 +219,7 @@ int getNeighborOverlapScores(const Graph &g0, const Graph &g1, const vector<VtxP
     return overlap_v + overlap_w;
 }
 
-int selectW_index(const Graph &g0, const Graph &g1, const vector<VtxPair> &current, const Bidomain *bd,
+int selectW_index(const Graph &g0, const Graph &g1, vector<VtxPair> *current, const Bidomain *bd,
                   const Rewards &rewards, const int v, const unordered_set<int> &wselected) {
     gtype max_g = -1;
     int best_vtx = INT_MAX;
@@ -306,9 +307,9 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
                 // If the current matching is larger than the incumbent matching, update the incumbent
                 unique_lock ilk(incumbent_mutex);
-                if (s->current.size() > incumbent.size()) {
+                if ((*s->current).size() > incumbent.size()) {
                     incumbent.clear();
-                    for (auto &pr: s->current) {
+                    for (auto &pr: *s->current) {
                         incumbent.push_back(pr);
                     }
                     if (!arguments.quiet) {
@@ -327,7 +328,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 ilk.unlock();
 
                 // Prune the branch if the upper bound is too small
-                int bound = (int) s->current.size() + calc_bound((*s->domains));
+                int bound = (int) (*s->current).size() + calc_bound((*s->domains));
                 // cout << stats->nodes << ": bound = " << bound << "\tincumbent = " << incumbent.size() << "\tcurrent = " << s->current.size() << endl;
                 if (bound <= (int) incumbent.size() || bound < (int) matching_size_goal) {
                     delete steps.back();
@@ -341,7 +342,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
                 }
 
                 // Select a bidomain based on the heuristic
-                int bd_idx = select_bidomain((*s->domains), rewards, (int) s->current.size());
+                int bd_idx = select_bidomain((*s->domains), rewards, (int) (*s->current).size());
                 // end = std::chrono::high_resolution_clock::now();
                 // cout << "V select domain " << std::chrono::duration<double>(end - t).count() << endl;
                 // t = end;
@@ -393,18 +394,18 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 #if DEBUG
                 if (stats->nodes % 1 == 0) {
                     //cout << "w_iter: " << s->w_iter << endl;
-                    cout << "nodes: " << stats->nodes << ", v: " << s->v << ", w: " << w << ", size: " << s->current.size() << ", num_doms: " << (*s->domains).size()
+                    cout << "nodes: " << stats->nodes << ", v: " << s->v << ", w: " << w << ", size: " << (*s->current).size() << ", num_doms: " << (*s->domains).size()
                          << ", dom: " << s->bd->left.size() - 1 << " " << s->bd->right.size() - 1 << endl; // ", steps: " << steps.size()<< endl;
                 }
 #endif
 
                 // TODO check these are deep copies
-                vector<VtxPair> new_current = s->current;
-                Bidomain new_bd = *s->bd;
+                vector<VtxPair> *new_current = new vector<VtxPair>;
+                *new_current = *s->current;
                 // end = std::chrono::high_resolution_clock::now();
                 // cout << "W deep copies " << std::chrono::duration<double>(end - t).count() << endl;
                 // t = end;
-                NewBidomainResult result = generate_new_domains(s->domains, new_current, new_bd, g0, g1, s->v, w);
+                NewBidomainResult result = generate_new_domains(s->domains, new_current, g0, g1, s->v, w);
                 // end = std::chrono::high_resolution_clock::now();
                 // cout << "W new domains " << std::chrono::duration<double>(end - t).count() << endl;
                 // t = end;
@@ -445,6 +446,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
 
                         s->v = -1;
                         s->w_iter = -1;
+                        s->wselected.clear();
                     }
 
                 }
@@ -494,8 +496,8 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
 
     // Create a bidomain for each label that appears in both graphs (only one at the start)
     for (unsigned int label: labels) {
-        list<int> left;
-        list<int> right;
+        vector<int> left;
+        vector<int> right;
 
         for (int i = 0; i < g0.n; i++)
             if (g0.adjlist[i].label == label)
@@ -513,7 +515,7 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
         block_size = arguments.max_thread_blocks;   // so we set block_size to max_thread_blocks to disable it
     list<Step *> steps;
     // TODO remove g0_matched
-    auto current = vector<VtxPair>();
+    auto current = new vector<VtxPair>();
     Step *sp = new Step(domains, -1, -1, current);
     steps.emplace_back(sp);
     vector<VtxPair> incumbent;
