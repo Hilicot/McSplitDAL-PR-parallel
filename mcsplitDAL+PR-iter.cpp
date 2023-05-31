@@ -209,8 +209,8 @@ bool check_sol(const Graph &g0, const Graph &g1, const vector<VtxPair> &solution
         struct VtxPair p0 = solution[i];
         if (used_left[p0.v] || used_right[p0.w])
         {
-            cout << "Used left: " << used_left[p0.v] << endl;
-            cout << "Used right: " << used_right[p0.w] << endl;
+            cout << "Used left (v= " << p0.v << "): " << used_left[p0.v] << endl;
+            cout << "Used right (w= " << p0.w << "): " << used_right[p0.w] << endl;
             return false;
         }
         used_left[p0.v] = true;

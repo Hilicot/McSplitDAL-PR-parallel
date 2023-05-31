@@ -132,7 +132,7 @@ generate_new_domains(const vector<Bidomain> *d, vector<VtxPair> *current, const 
                 if (std::find_if((*current).begin(), (*current).end(), [v_leaf](VtxPair p) { return p.v == v_leaf; }) !=
                     (*current).end())
                     p++;
-                if (std::find_if((*current).begin(), (*current).end(), [w_leaf](VtxPair p) { return p.w == w_leaf; }) !=
+                else if (std::find_if((*current).begin(), (*current).end(), [w_leaf](VtxPair p) { return p.w == w_leaf; }) !=
                     (*current).end())
                     q++;
                 else {
