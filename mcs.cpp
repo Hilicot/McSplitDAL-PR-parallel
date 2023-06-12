@@ -19,6 +19,7 @@ mutex reward_mutex;
 mutex incumbent_mutex;
 condition_variable steps_cv;
 int block_size = -1;
+vector<long> thread_times;
 
 bool reached_max_iter(Stats *stats) {
     return 0 < arguments.max_iter && arguments.max_iter < (int) stats->nodes;
@@ -252,8 +253,9 @@ int selectW_index(const Graph &g0, const Graph &g1, vector<VtxPair> *current, co
 
 vector<VtxPair>
 solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incumbent, list<Step *> &global_steps,
-      unsigned int matching_size_goal, Stats *stats) {
+      unsigned int matching_size_goal, Stats *stats, int thread_index) {
 
+    auto start_time = std::chrono::high_resolution_clock::now();
     list<Step *> steps;
     while (true) {
         // pop one step from the global stack
@@ -271,6 +273,7 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
             lk.unlock();
             return incumbent;
         }
+        start_time = std::chrono::high_resolution_clock::now();
         steps.emplace_back(global_steps.back());
         global_steps.pop_back();
         lk.unlock();
@@ -473,6 +476,11 @@ solve(const Graph &g0, const Graph &g1, Rewards &rewards, vector<VtxPair> &incum
             steps_cv.notify_all();
             steps.clear();
         }
+
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start_time);
+        auto count = duration.count();
+        thread_times[thread_index] += count;
     }
 }
 
@@ -524,7 +532,8 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
         cout << "Starting thread " << i + 1 << " out of " << arguments.threads << endl;
         //stats->start = clock();
         stats->nodes = 0;
-        threads.emplace_back(solve, g0, g1, ref(rewards), ref(incumbent), ref(steps), 1, stats);
+        thread_times.emplace_back(0);
+        threads.emplace_back(solve, g0, g1, ref(rewards), ref(incumbent), ref(steps), 1, stats, i);
     }
 
     for (std::thread &t: threads)
@@ -536,6 +545,12 @@ vector<VtxPair> mcs(const Graph &g0, const Graph &g1, void *rewards_p, Stats *st
     if (arguments.timeout && double(clock() - stats->start) / CLOCKS_PER_SEC > arguments.timeout) {
         cout << "time out" << endl;
     }
+
+    cout << "Thread work times";
+    for (int i = 0; i < arguments.threads; i++) {
+        cout << " " << (thread_times[i] / 1000.0);
+    }
+    cout << endl;
 
     return incumbent;
 }
