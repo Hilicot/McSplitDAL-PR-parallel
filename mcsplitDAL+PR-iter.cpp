@@ -301,12 +301,13 @@ int main(int argc, char **argv) {
     }
 #endif
 
+    // No SD version
     // decide whether to swap the graphs based on swap_policy
-    if (swap_graphs(g0, g1)) {
-        swap(g0, g1);
-        stats->swapped_graphs = true;
-        cout << "Swapped graphs" << endl;
-    }
+    // if (swap_graphs(g0, g1)) {
+    //     swap(g0, g1);
+    //     stats->swapped_graphs = true;
+    //     cout << "Swapped graphs" << endl;
+    // }
 
     //  auto start = std::chrono::steady_clock::now();
     stats->start = clock();
@@ -347,18 +348,19 @@ int main(int argc, char **argv) {
     clock_t time_elapsed = clock() - stats->start;
     std::cout << "Induced subgraph calculated in " << time_elapsed * 1000 / CLOCKS_PER_SEC << "ms" << endl;
 
-    g0_sorted.pack_leaves();
-    g1_sorted.pack_leaves();
+    // No DAL version
+    // g0_sorted.pack_leaves();
+    // g1_sorted.pack_leaves();
 
-    DoubleQRewards rewards(g0.n, g1.n);
-    if(arguments.initialize_rewards){
-        rewards.initialize(g0_deg, g1_deg);
-    }
+    // DoubleQRewards rewards(g0.n, g1.n);
+    // if(arguments.initialize_rewards){
+    //     rewards.initialize(g0_deg, g1_deg);
+    // }
 
     // start clock
     stats->start = clock();
 
-    vector<VtxPair> solution = mcs(g0_sorted, g1_sorted, (void *) &rewards, stats);
+    vector<VtxPair> solution = mcs(g0_sorted, g1_sorted, nullptr, stats);
 
     // Convert to indices from original, unsorted graphs
     for (auto &vtx_pair: solution) {
